@@ -21,7 +21,7 @@ Architecture direction:
 
 # Plan
 
-Refer to .codex/plan.md for main stages of implementation
+Refer to .codex/plan.md for general main stages of implementation. Refer to .codex/build_scenes.md for specific instructions for building out each scene.
 
 # Skills
 
@@ -36,7 +36,7 @@ Use three.js WebGPU Agent Skills when needed
 
 # Notes
 
-`notes/notes.md` is a scratch pad that you will write to concisely about things you've notes and learned during the implementation, including but not limited to design choices. Whenever you feel like there's something that other coding agents after you will benefit from in later implementation, write to it
+`.notes/notes.md` is a scratch pad that you will write to concisely about things you've notes and learned during the implementation, including but not limited to design choices. Whenever you feel like there's something that other coding agents after you will benefit from in later implementation, write to it
 
 This serves as the agent continuous memory so even when i start a new coding agent, you will also benefit from the notes the agents before you have noted.
 
