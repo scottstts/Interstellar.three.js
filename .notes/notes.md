@@ -30,3 +30,57 @@
 
 # Start Building Scenes
 
+## 2026-02-20 - Stage 2 Scene 01 implementation (Cooper farmhouse intro)
+- Replaced `src/three/scenes/01CooperFarmhouseScene.js` placeholder with a full lifecycle scene module (custom `init/update/dispose`) and retained strict scene contract compatibility.
+- Added a cinematic farm environment built from primitives:
+  - Terrain mesh with sculpted rolling height variation.
+  - Meandering dirt road carved through the field.
+  - Horizon tree-line silhouettes to improve long-range depth.
+  - Detailed farmhouse set (main house, porch, windows, chimney, barn, silo, and front fence).
+- Added scene-specific atmosphere and light pass:
+  - Warm late-afternoon key/fill/hemi lighting.
+  - Pale dust-haze sky color and scene fog.
+  - Large sun disk card for cinematic framing.
+- Added deterministic ambient animation systems:
+  - Instanced cornfield (~hundreds of plants) with wind sway driven in `update`.
+  - Animated pickup truck loop on road path with wheel spin.
+  - Truck dust trail particles and broad ambient airborne dust particles.
+- Scene cleanup details:
+  - `dispose` now restores prior `scene.background` and `scene.fog` so later scenes are not contaminated.
+  - Full object/material/geometry cleanup continues via `disposeObject3D(sceneGroup)`.
+- Validation after task: `npm run lint` passed, `npm run build` passed (existing Vite chunk-size warning remains).
+- Start screen overlay base gradient is now fully opaque (no alpha base layer), so idle entrance background stays consistent regardless of whichever 3D scene is loaded behind it.
+- Camera navigation now supports vertical world-axis movement independent of view direction: `Space` moves up (+Y), `Shift` moves down (-Y), alongside existing view-relative `WASD`.
+- Tightened pointer-lock gating in `PointerLookControls`: keyboard movement input and update-step movement now no-op unless pointer lock is active; key state clears on pointer-lock loss and window blur to avoid stale movement.
+## 2026-02-20 - Scene 01 realism pass + truck wheel axis fix
+- Addressed truck wheel animation bug in `01CooperFarmhouseScene` by switching to wheel pivot groups and rotating pivots on roll axis (`pivot.rotation.z`) with wheel geometry pre-oriented; wheel spin now behaves like physical rolling rather than vertical-axis spin.
+- Upgraded scene atmosphere and composition:
+  - Added procedural sky dome texture + layered haze bands for dusty daylight depth.
+  - Refined scene fog/background colors to push pale arid Earth tone.
+  - Adjusted initial camera framing to a wider cinematic farmhouse-road composition.
+- Upgraded terrain materials and form:
+  - Added procedural ground and road canvas textures for breakup (soil grain, furrows, tire-track tonal contrast).
+  - Increased terrain tessellation and sculpting; integrated a road cut into surrounding terrain.
+  - Added road shoulders and improved road deformation/ruts.
+- Expanded environmental storytelling:
+  - Added utility poles, crossarms, insulators, and hanging wire runs along the road for scale cues.
+  - Expanded horizon windbreak ring to improve scene enclosure and perceived distance.
+- Improved farmhouse set dressing:
+  - Shifted/scaled farmstead for composition.
+  - Added roof ridge/eaves, porch rails, door inset, front steps, barn trim, and mailbox details.
+- Improved cornfield realism:
+  - Increased field footprint and density.
+  - Increased plant scale and variation.
+  - Added tassel instancing and stronger multi-layer wind sway.
+  - Carved road and farmhouse-yard clearings through crop placement.
+- Improved motion and dust behavior:
+  - Truck now follows a meandering dirt-road path with suspension oscillation and richer dust plume.
+  - Ambient dust field density and wind behavior increased for pervasive haze.
+- Validation: `npm run lint` passed, `npm run build` passed (existing bundle-size warning persists).
+## 2026-02-20 - Scene 01 structure-road overlap correction
+- Adjusted farmstead placement to keep major structures off the dirt road path:
+  - Moved farmstead world position X from `-18` to `-30`.
+  - Shifted barn local X from `20` to `14`.
+  - Shifted silo local X from `29.5` to `21`.
+- Result: the farmhouse compound no longer sits on the road spline corridor in top-down / elevated views.
+- Validation: `npm run lint` passed, `npm run build` passed (existing bundle-size warning unchanged).

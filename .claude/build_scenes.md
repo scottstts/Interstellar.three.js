@@ -64,6 +64,8 @@ Rely on these scene descritpions as baselines for the scene recreation, but also
 
 Each scene should have as much details as possible to create the original movie scenes. Use primitive objects for basic scene construction, use advance objects for details, use lighting and materials to stay true to the original movie vibe. Use animations to make the scene vivid and alive, but also to create motions in the scene when the scene is not fully static (such as when Cooper was docking Lander 2 with the exploded Endurance mid spinning)
 
+The ultimate goal is to recreate the scene in a stylized way that is true to the original movie scenes, and have a good level of realism.
+
 ### 1) Cooper farmhouse and cornfield intro
 - File: `src/three/scenes/01CooperFarmhouseScene.js`
 - Build here: The opening introduces a visually grounded, dust-drenched near-future framed by sprawling, golden-brown cornfields that stretch endlessly toward a hazy, pale sky. Cooper's weathered, two-story farmhouse stands as a lonely beacon of mid-century Americana, its peeling white paint and rustic interiors steeped in a melancholic, nostalgic warmth. The cinematography relies heavily on natural, sunlit tones and wide, sweeping shots of Cooper's pickup truck kicking up dry dirt, establishing an idyllic yet arid atmosphere that grounds the viewer in the tactile reality of a slowly dying Earth before the cosmic journey begins.
