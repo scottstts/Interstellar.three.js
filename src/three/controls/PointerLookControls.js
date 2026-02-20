@@ -18,6 +18,7 @@ export class PointerLookControls {
     this.pitch = 0
     this.moveForward = 0
     this.moveStrafe = 0
+    this.moveVertical = 0
 
     this.handleClick = this.handleClick.bind(this)
     this.handleMouseMove = this.handleMouseMove.bind(this)
@@ -75,6 +76,7 @@ export class PointerLookControls {
   update(deltaSeconds) {
     this.moveForward = 0
     this.moveStrafe = 0
+    this.moveVertical = 0
 
     if (this.activeKeys.has('KeyW')) {
       this.moveForward += 1
@@ -92,7 +94,15 @@ export class PointerLookControls {
       this.moveStrafe += 1
     }
 
-    if (this.moveForward === 0 && this.moveStrafe === 0) {
+    if (this.activeKeys.has('Space')) {
+      this.moveVertical += 1
+    }
+
+    if (this.activeKeys.has('ShiftLeft') || this.activeKeys.has('ShiftRight')) {
+      this.moveVertical -= 1
+    }
+
+    if (this.moveForward === 0 && this.moveStrafe === 0 && this.moveVertical === 0) {
       return
     }
 
@@ -106,6 +116,10 @@ export class PointerLookControls {
 
     if (this.moveStrafe !== 0) {
       this.camera.position.addScaledVector(RIGHT_VECTOR, this.moveStrafe * movement)
+    }
+
+    if (this.moveVertical !== 0) {
+      this.camera.position.addScaledVector(UP_VECTOR, this.moveVertical * movement)
     }
   }
 
