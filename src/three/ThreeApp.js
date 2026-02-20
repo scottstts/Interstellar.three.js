@@ -101,41 +101,7 @@ export class ThreeApp {
 
   createGlobalSet() {
     const set = new THREE.Group()
-
-    const ambient = new THREE.AmbientLight(0x6d7f99, 0.7)
-    const key = new THREE.DirectionalLight(0xb1ccff, 1.1)
-    const fill = new THREE.DirectionalLight(0x223b58, 0.35)
-
-    key.position.set(12, 22, 10)
-    fill.position.set(-16, 6, -12)
-
-    set.add(ambient, key, fill)
-
-    const starGeometry = new THREE.BufferGeometry()
-    const starCount = 1200
-    const starData = new Float32Array(starCount * 3)
-
-    for (let i = 0; i < starCount; i += 1) {
-      const index = i * 3
-      const radius = 180 + Math.random() * 320
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-
-      starData[index] = radius * Math.sin(phi) * Math.cos(theta)
-      starData[index + 1] = radius * Math.cos(phi)
-      starData[index + 2] = radius * Math.sin(phi) * Math.sin(theta)
-    }
-
-    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starData, 3))
-
-    const starMaterial = new THREE.PointsMaterial({
-      color: 0xdde9ff,
-      size: 1.2,
-      sizeAttenuation: true,
-    })
-
-    const stars = new THREE.Points(starGeometry, starMaterial)
-    set.add(stars)
+    set.name = 'app-global-placeholder'
 
     return set
   }
