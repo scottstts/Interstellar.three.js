@@ -90,7 +90,10 @@ export class PointerLookControls {
   }
 
   handlePointerLockChange() {
-    if (!this.isPointerLocked()) {
+    if (this.isPointerLocked()) {
+      /* re-sync so the first mouse move doesn't snap from stale yaw/pitch */
+      this.syncAnglesFromCamera()
+    } else {
       this.activeKeys.clear()
     }
   }

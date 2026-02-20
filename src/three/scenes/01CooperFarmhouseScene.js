@@ -1030,8 +1030,9 @@ function createTruckSystem(rng) {
     const y = 0.44 + Math.sin(elapsed * 10.2) * 0.03 + Math.cos(elapsed * 2.3) * 0.015
 
     const yaw = Math.atan2(dzDt, dxDt)
+    const heading = yaw + Math.PI
     truckRig.position.set(x, y, z)
-    truckRig.rotation.y = yaw
+    truckRig.rotation.y = heading
     truckBody.rotation.x = Math.sin(elapsed * 11.3) * 0.012
     truckBody.rotation.z = Math.sin(elapsed * 7.2) * 0.018
 
@@ -1041,7 +1042,7 @@ function createTruckSystem(rng) {
       pivot.rotation.z = wheelRotation
     }
 
-    TEMP_FORWARD.set(Math.cos(yaw), 0, Math.sin(yaw))
+    TEMP_FORWARD.set(Math.cos(heading), 0, Math.sin(heading))
     TEMP_SIDE.set(-TEMP_FORWARD.z, 0, TEMP_FORWARD.x)
     TEMP_REAR.copy(truckRig.position).addScaledVector(TEMP_FORWARD, -2.75)
     TEMP_REAR.y = truckRig.position.y + 0.08

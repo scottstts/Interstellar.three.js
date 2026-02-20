@@ -90,3 +90,23 @@
 - Added a scene-only bottom-left control hint box (hidden on start screen) with requested copy: `WSAD for movement, Shift down Space up, mouse for view panning`.
 - Hint box is non-interactive (`pointer-events: none`) and responsive to avoid overlap with control buttons on smaller viewports.
 - Scene input hint updated to multiline copy (movement / vertical controls / mouse panning each on separate line) and moved below scene menu in stacking order (`z-index: 40`, menu remains above at `z-index: 45`).
+## 2026-02-20 - Stage 2 Scene 02 implementation (Cornfield Drone Chase)
+- Full rewrite of `02CornfieldDroneScene.js` with major quality improvements:
+  - **Density**: 14,000 corn stalks (up from 4,000) in tighter 120×180 field = thick wall of corn.
+  - **Corn detail**: each plant has stalk + tassel + 4 drooping leaf blades. Leaves have curved geometry for realism.
+  - **Path centered on camera**: S-curve passes through z≈0 near x≈0 so default camera (0,2.2,15) sees action immediately.
+  - **Speed**: TRUCK_SPEED 0.04 (up from 0.012) = ~3.3× faster. Wheel spin at 28 rad/s.
+  - **Truck detail**: chassis, body, cab, roof, glass windshield/rear/side windows, bed with walls/tailgate, chrome bumpers, grille, headlights, taillights, side mirrors, fender flares, antenna. Weathered rusty paint + chrome + dark metal materials.
+  - **Drone detail**: tapered fuselage + nose cone, camera dome, wide solar-panel wings with grid lines, tail boom, horizontal stabilizer, V-tail fins. Metallic/solar materials.
+  - **Sky**: gradient vertex-colored dome (zenith blue → horizon pale → ground warm), layered sun disc + glow, horizon haze band.
+  - **Ground**: 1024px procedural canvas texture with soil grain + furrow lines, terrain undulation, higher anisotropy.
+  - **Lighting**: 5-light setup — strong warm key (2.5 intensity), secondary fill, hemisphere sky/earth, ambient lift, rim backlight for drone.
+  - **Fog**: linear fog (30–260) for natural depth fade.
+  - **Dust**: 500-particle truck trail with behind-truck emission + growing/fading sizes; 800-particle ambient.
+  - **Bending**: corn within 3.2 radius of truck permanently flattens; tassels and leaves follow parent stalk transform per-frame.
+- Key lesson: scene geometry must be positioned to fit the default camera, not the other way around.
+- Validation: `npm run lint` passed, `npm run build` passed.
+## 2026-02-20 - Scene 01 truck heading correction
+- Flipped truck heading by 180 degrees in `createTruckSystem` update loop so the model orientation matches travel direction (`heading = yaw + Math.PI`).
+- Applied heading to both rig rotation and forward vector used for dust plume anchoring to keep emit direction consistent.
+- Validation: `npm run lint` passed, `npm run build` passed (existing bundle-size warning persists).
