@@ -1,6 +1,6 @@
 import CooperFarmhouseScene from './01CooperFarmhouseScene'
-import DustStormMurphScene from './02DustStormMurphScene'
-import CornfieldDroneScene from './03CornfieldDroneScene'
+import CornfieldDroneScene from './02CornfieldDroneScene'
+import DustStormMurphScene from './03DustStormMurphScene'
 import NasaFacilityScene from './04NasaFacilityScene'
 import EnduranceLaunchScene from './05EnduranceLaunchScene'
 import SaturnApproachScene from './06SaturnApproachScene'
@@ -14,8 +14,8 @@ import CooperStationScene from './13CooperStationScene'
 
 export const sceneManifest = [
   CooperFarmhouseScene,
-  DustStormMurphScene,
   CornfieldDroneScene,
+  DustStormMurphScene,
   NasaFacilityScene,
   EnduranceLaunchScene,
   SaturnApproachScene,

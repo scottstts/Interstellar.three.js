@@ -198,7 +198,6 @@ function App() {
                 <h1>Interstellar</h1>
                 <div className="entrance-meta">
                   <span>13 Scenes</span>
-                  <span>Pointer-Look + WASD</span>
                 </div>
                 <button className="primary-action" type="button" onClick={handleStart}>
                   Enter
@@ -269,6 +268,12 @@ function App() {
             <button type="button" onClick={handleNextScene} disabled={appState !== 'playing' || !hasNextScene}>
               Next Scene
             </button>
+          </div>
+
+          <div className="scene-input-hint">
+            <p>WSAD for movement</p>
+            <p>Shift down, Space up</p>
+            <p>Mouse for view panning</p>
           </div>
         </>
       )}

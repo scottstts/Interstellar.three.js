@@ -18,8 +18,8 @@ The app foundation is complete and should stay stable while scenes are built (Do
 For normal scene production, only edit scene modules under:
 
 - `src/three/scenes/01CooperFarmhouseScene.js`
-- `src/three/scenes/02DustStormMurphScene.js`
-- `src/three/scenes/03CornfieldDroneScene.js`
+- `src/three/scenes/02CornfieldDroneScene.js`
+- `src/three/scenes/03DustStormMurphScene.js`
 - `src/three/scenes/04NasaFacilityScene.js`
 - `src/three/scenes/05EnduranceLaunchScene.js`
 - `src/three/scenes/06SaturnApproachScene.js`
@@ -70,13 +70,13 @@ The ultimate goal is to recreate the scene in a stylized way that is true to the
 - File: `src/three/scenes/01CooperFarmhouseScene.js`
 - Build here: The opening introduces a visually grounded, dust-drenched near-future framed by sprawling, golden-brown cornfields that stretch endlessly toward a hazy, pale sky. Cooper's weathered, two-story farmhouse stands as a lonely beacon of mid-century Americana, its peeling white paint and rustic interiors steeped in a melancholic, nostalgic warmth. The cinematography relies heavily on natural, sunlit tones and wide, sweeping shots of Cooper's pickup truck kicking up dry dirt, establishing an idyllic yet arid atmosphere that grounds the viewer in the tactile reality of a slowly dying Earth before the cosmic journey begins.
 
-### 2) Dust storm + Murph room anomaly
-- File: `src/three/scenes/02DustStormMurphScene.js`
-- Build here: An imposing, towering wall of thick brown dust - a massive haboob - swallows the farmhouse, plunging the exterior into a murky, suffocating twilight. Inside, the visual focus tightens to Murph's dimly lit bedroom, where ambient light filters through a poorly sealed window, illuminating swirling airborne particulate matter. As Cooper and Murph shine their flashlights across the floor, the chaotic flying dust abruptly settles into eerily pristine, thick, parallel lines of dirt, creating a striking, highly textured visual of the gravitational anomaly against the rustic, heavily shadowed wooden floorboards.
-
-### 3) Cornfield drone chase
-- File: `src/three/scenes/03CornfieldDroneScene.js`
+### 2) Cornfield drone chase
+- File: `src/three/scenes/02CornfieldDroneScene.js`
 - Build here: A kinetic, high-speed tracking shot captures Cooper's pickup truck violently plowing through a dense sea of tall, sunlit cornstalks, violently snapping the vibrant green and yellow vegetation under its heavy tires. Above them, a sleek, solar-paneled Indian surveillance drone cuts a smooth, silent path across a starkly clear blue sky, its pristine aerodynamic design clashing visually with the rugged, dusty farm truck below. The chaotic, bumpy interior shots of Cooper frantically steering while Murph operates a makeshift antenna culminate in the elegant machine gracefully descending into the dusty soil, seamlessly merging high-tech aerospace design with the agrarian landscape.
+
+### 3) Dust storm + Murph room anomaly
+- File: `src/three/scenes/03DustStormMurphScene.js`
+- Build here: An imposing, towering wall of thick brown dust - a massive haboob - swallows the farmhouse, plunging the exterior into a murky, suffocating twilight. Inside, the visual focus tightens to Murph's dimly lit bedroom, where ambient light filters through a poorly sealed window, illuminating swirling airborne particulate matter. As Cooper and Murph shine their flashlights across the floor, the chaotic flying dust abruptly settles into eerily pristine, thick, parallel lines of dirt, creating a striking, highly textured visual of the gravitational anomaly against the rustic, heavily shadowed wooden floorboards.
 
 ### 4) Secret NASA facility reveal
 - File: `src/three/scenes/04NasaFacilityScene.js`

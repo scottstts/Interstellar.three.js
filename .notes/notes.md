@@ -84,3 +84,9 @@
   - Shifted silo local X from `29.5` to `21`.
 - Result: the farmhouse compound no longer sits on the road spline corridor in top-down / elevated views.
 - Validation: `npm run lint` passed, `npm run build` passed (existing bundle-size warning unchanged).
+- Swapped chronological order of scenes 2 and 3 to match film pacing: Scene 2 is now cornfield drone chase, Scene 3 is dust-storm/Murph anomaly.
+- Renamed scene modules to keep numbering/file names aligned with chronology: `02CornfieldDroneScene.js`, `03DustStormMurphScene.js` and updated manifest/docs accordingly.
+- Synced ordering docs across all mirrored rule sets: `.codex/`, `.claude/`, `.agent/rules/` (`plan.md` + `build_scenes.md`).
+- Added a scene-only bottom-left control hint box (hidden on start screen) with requested copy: `WSAD for movement, Shift down Space up, mouse for view panning`.
+- Hint box is non-interactive (`pointer-events: none`) and responsive to avoid overlap with control buttons on smaller viewports.
+- Scene input hint updated to multiline copy (movement / vertical controls / mouse panning each on separate line) and moved below scene menu in stacking order (`z-index: 40`, menu remains above at `z-index: 45`).

@@ -2,8 +2,8 @@
 
 ## Chronological Scene List (Draft: 13 Scenes)
 1. Cooper farmhouse and cornfield world intro
-2. Dust storm and the gravitational anomaly in Murph's room
-3. Cornfield drone chase and retrieval
+2. Cornfield drone chase and retrieval
+3. Dust storm and the gravitational anomaly in Murph's room
 4. Secret NASA facility reveal and mission briefing
 5. Endurance launch from Earth
 6. Endurance travel near Saturn before wormhole entry
