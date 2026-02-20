@@ -855,8 +855,8 @@ export default {
         previousBackground = scene.background
         previousFog = scene.fog
 
-        scene.background = new THREE.Color(0x1d1511)
-        scene.fog = new THREE.FogExp2(0x3f2c1d, 0.02)
+        scene.background = new THREE.Color(0x2b211b)
+        scene.fog = new THREE.FogExp2(0x4a3426, 0.012)
 
         group = new THREE.Group()
         group.name = 'scene-03-dust-storm-murph'
@@ -894,37 +894,37 @@ export default {
         room.add(anomalyLineSet.group)
         anomalyLines = anomalyLineSet.lines
 
-        const ambient = new THREE.AmbientLight(0x6a5647, 0.68)
+        const ambient = new THREE.AmbientLight(0x8e7562, 1.25)
         group.add(ambient)
 
-        outsideWindowLight = new THREE.PointLight(0xffcd95, 4.2, 28, 1.58)
+        outsideWindowLight = new THREE.PointLight(0xffcd95, 7.4, 32, 1.48)
         outsideWindowLight.position.set(-7.55, 3.4, -3.85)
         group.add(outsideWindowLight)
 
-        const fill = new THREE.HemisphereLight(0xa98468, 0x2a1b12, 0.92)
+        const fill = new THREE.HemisphereLight(0xc29a7b, 0x3a271b, 1.55)
         group.add(fill)
 
-        ceilingLight = new THREE.PointLight(0xffd9b2, 2.4, 21, 1.72)
+        ceilingLight = new THREE.PointLight(0xffd9b2, 4.8, 24, 1.62)
         ceilingLight.position.set(0.8, 5.35, -1.1)
         group.add(ceilingLight)
 
-        bounceFillLight = new THREE.PointLight(0xc49266, 1.9, 18, 1.9)
+        bounceFillLight = new THREE.PointLight(0xc49266, 3.6, 22, 1.72)
         bounceFillLight.position.set(0.4, 1.2, 1.8)
         group.add(bounceFillLight)
 
-        frontFillLight = new THREE.PointLight(0xe0b083, 1.6, 22, 1.82)
+        frontFillLight = new THREE.PointLight(0xe0b083, 2.9, 24, 1.74)
         frontFillLight.position.set(-0.2, 2.0, 6.3)
         group.add(frontFillLight)
 
-        shelfFillLight = new THREE.PointLight(0xe1af7f, 1.5, 12, 1.95)
+        shelfFillLight = new THREE.PointLight(0xe1af7f, 3.0, 14, 1.82)
         shelfFillLight.position.set(0.7, 2.7, -5.4)
         group.add(shelfFillLight)
 
-        cooperFillLight = new THREE.PointLight(0xffc89a, 1.1, 4.6, 2.1)
+        cooperFillLight = new THREE.PointLight(0xffc89a, 2.4, 5.6, 1.95)
         cooperFillLight.position.set(-0.26, 1.88, 0.7)
         cooper.add(cooperFillLight)
 
-        murphFillLight = new THREE.PointLight(0xffc89a, 1.0, 4.4, 2.1)
+        murphFillLight = new THREE.PointLight(0xffc89a, 2.25, 5.4, 1.95)
         murphFillLight.position.set(0.18, 1.8, 0.68)
         murph.add(murphFillLight)
 
@@ -968,32 +968,32 @@ export default {
         const gustStrength = Math.sin(animationClock * 0.8) * 0.55 + Math.sin(animationClock * 1.95) * 0.28
 
         if (outsideWindowLight) {
-          outsideWindowLight.intensity = 3.8 + (1 - settleAmount) * 1.35 + Math.sin(animationClock * 1.1) * 0.24
+          outsideWindowLight.intensity = 6.8 + (1 - settleAmount) * 2.2 + Math.sin(animationClock * 1.1) * 0.35
           outsideWindowLight.position.y = 3.35 + Math.sin(animationClock * 0.45) * 0.12
         }
 
         if (ceilingLight) {
-          ceilingLight.intensity = 2.0 + settleAmount * 0.66 + Math.sin(animationClock * 0.65) * 0.08
+          ceilingLight.intensity = 4.1 + settleAmount * 1.2 + Math.sin(animationClock * 0.65) * 0.16
         }
 
         if (bounceFillLight) {
-          bounceFillLight.intensity = 1.52 + settleAmount * 0.42 + Math.sin(animationClock * 0.8) * 0.08
+          bounceFillLight.intensity = 3.0 + settleAmount * 0.9 + Math.sin(animationClock * 0.8) * 0.12
         }
 
         if (frontFillLight) {
-          frontFillLight.intensity = 1.34 + settleAmount * 0.34 + Math.sin(animationClock * 0.72) * 0.05
+          frontFillLight.intensity = 2.4 + settleAmount * 0.72 + Math.sin(animationClock * 0.72) * 0.1
         }
 
         if (shelfFillLight) {
-          shelfFillLight.intensity = 1.32 + (1 - settleAmount) * 0.32 + Math.sin(animationClock * 0.6) * 0.05
+          shelfFillLight.intensity = 2.45 + (1 - settleAmount) * 0.7 + Math.sin(animationClock * 0.6) * 0.12
         }
 
         if (cooperFillLight) {
-          cooperFillLight.intensity = 0.96 + settleAmount * 0.28 + Math.sin(animationClock * 0.9) * 0.04
+          cooperFillLight.intensity = 2.0 + settleAmount * 0.6 + Math.sin(animationClock * 0.9) * 0.08
         }
 
         if (murphFillLight) {
-          murphFillLight.intensity = 0.9 + settleAmount * 0.26 + Math.sin(animationClock * 0.94 + 1.1) * 0.04
+          murphFillLight.intensity = 1.85 + settleAmount * 0.56 + Math.sin(animationClock * 0.94 + 1.1) * 0.08
         }
 
         if (anomalyFloorLight) {
@@ -1001,7 +1001,7 @@ export default {
         }
 
         if (windowGlowMaterial) {
-          windowGlowMaterial.opacity = 0.86 + (1 - settleAmount) * 0.18 + Math.sin(animationClock * 0.9) * 0.04
+          windowGlowMaterial.opacity = 0.96 + (1 - settleAmount) * 0.08 + Math.sin(animationClock * 0.9) * 0.03
         }
 
         for (const anomalyLine of anomalyLines) {
