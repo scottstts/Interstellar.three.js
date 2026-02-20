@@ -24,6 +24,8 @@ export class PointerLookControls {
     this.handleMouseMove = this.handleMouseMove.bind(this)
     this.handleKeyDown = this.handleKeyDown.bind(this)
     this.handleKeyUp = this.handleKeyUp.bind(this)
+    this.handlePointerLockChange = this.handlePointerLockChange.bind(this)
+    this.handleWindowBlur = this.handleWindowBlur.bind(this)
 
     this.syncAnglesFromCamera()
 
@@ -31,6 +33,12 @@ export class PointerLookControls {
     window.addEventListener('mousemove', this.handleMouseMove)
     window.addEventListener('keydown', this.handleKeyDown)
     window.addEventListener('keyup', this.handleKeyUp)
+    document.addEventListener('pointerlockchange', this.handlePointerLockChange)
+    window.addEventListener('blur', this.handleWindowBlur)
+  }
+
+  isPointerLocked() {
+    return document.pointerLockElement === this.domElement
   }
 
   syncAnglesFromCamera() {
@@ -40,13 +48,13 @@ export class PointerLookControls {
   }
 
   handleClick() {
-    if (document.pointerLockElement !== this.domElement) {
+    if (!this.isPointerLocked()) {
       this.domElement.requestPointerLock()
     }
   }
 
   handleMouseMove(event) {
-    if (document.pointerLockElement !== this.domElement) {
+    if (!this.isPointerLocked()) {
       return
     }
 
@@ -66,14 +74,37 @@ export class PointerLookControls {
   }
 
   handleKeyDown(event) {
+    if (!this.isPointerLocked()) {
+      return
+    }
+
     this.activeKeys.add(event.code)
   }
 
   handleKeyUp(event) {
+    if (!this.isPointerLocked()) {
+      return
+    }
+
     this.activeKeys.delete(event.code)
   }
 
+  handlePointerLockChange() {
+    if (!this.isPointerLocked()) {
+      this.activeKeys.clear()
+    }
+  }
+
+  handleWindowBlur() {
+    this.activeKeys.clear()
+  }
+
   update(deltaSeconds) {
+    if (!this.isPointerLocked()) {
+      this.activeKeys.clear()
+      return
+    }
+
     this.moveForward = 0
     this.moveStrafe = 0
     this.moveVertical = 0
@@ -128,5 +159,7 @@ export class PointerLookControls {
     window.removeEventListener('mousemove', this.handleMouseMove)
     window.removeEventListener('keydown', this.handleKeyDown)
     window.removeEventListener('keyup', this.handleKeyUp)
+    document.removeEventListener('pointerlockchange', this.handlePointerLockChange)
+    window.removeEventListener('blur', this.handleWindowBlur)
   }
 }
