@@ -20,6 +20,7 @@ export class ThreeApp {
 
     this.controls = null
     this.sceneManager = null
+    this.isRendering = false
 
     this.renderFrame = this.renderFrame.bind(this)
     this.handleResize = this.handleResize.bind(this)
@@ -76,7 +77,26 @@ export class ThreeApp {
     await this.sceneManager.load(0)
 
     window.addEventListener('resize', this.handleResize)
+  }
+
+  resumeRendering() {
+    if (!this.renderer || this.isRendering) {
+      return
+    }
+
+    // Prevent a large first delta after being paused for a while.
+    this.clock.getDelta()
     this.renderer.setAnimationLoop(this.renderFrame)
+    this.isRendering = true
+  }
+
+  pauseRendering() {
+    if (!this.renderer || !this.isRendering) {
+      return
+    }
+
+    this.renderer.setAnimationLoop(null)
+    this.isRendering = false
   }
 
   createGlobalSet() {
@@ -211,10 +231,7 @@ export class ThreeApp {
 
   dispose() {
     window.removeEventListener('resize', this.handleResize)
-
-    if (this.renderer) {
-      this.renderer.setAnimationLoop(null)
-    }
+    this.pauseRendering()
 
     if (this.controls) {
       this.controls.dispose()

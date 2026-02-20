@@ -133,7 +133,3 @@ Run both after each completed scene task:
 
 - `npm run lint`
 - `npm run build`
-
-Then append implementation notes to:
-
-- `.notes/notes.md`

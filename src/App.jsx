@@ -49,12 +49,17 @@ function App() {
           return
         }
 
+        app.pauseRendering()
         setSceneInfo(app.getCurrentSceneInfo())
         setSceneList(app.getSceneList())
         setAppState('idle')
       } catch (error) {
         if (!mounted) {
           return
+        }
+
+        if (appRef.current) {
+          appRef.current.pauseRendering()
         }
 
         setErrorMessage(formatBootErrorMessage(error))
@@ -112,6 +117,9 @@ function App() {
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Navigation failed.')
         setAppState('error')
+        if (appRef.current) {
+          appRef.current.pauseRendering()
+        }
         setFadeOpacity(0)
         transitionLockRef.current = false
         return false
@@ -135,6 +143,10 @@ function App() {
     setFadeTransitionEnabled(false)
     setFadeOpacity(1)
     await wait(34)
+
+    if (appRef.current) {
+      appRef.current.resumeRendering()
+    }
 
     setAppState('transitioning')
     setFadeTransitionEnabled(true)

@@ -100,4 +100,3 @@ Goal: Replace each placeholder with a recognizable cinematic recreation while pr
    - Tune fade timing and scene handoff rhythm
 3. Release readiness:
    - Run lint/build and address warnings/errors
-   - Update implementation notes in `notes/notes.md`
