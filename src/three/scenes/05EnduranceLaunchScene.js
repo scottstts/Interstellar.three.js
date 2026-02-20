@@ -8,7 +8,6 @@ import {
   Fn,
   float,
   frontFacing,
-  hash,
   length,
   Loop,
   max,
@@ -23,7 +22,6 @@ import {
   smoothstep,
   sqrt,
   step,
-  texture,
   time,
   uniform,
   vec2,
@@ -32,26 +30,71 @@ import {
 } from 'three/tsl'
 import { disposeObject3D } from '../utils/dispose'
 
-const EARTH_RADIUS = 24000
-const EARTH_SHELL_RADIUS = EARTH_RADIUS * (1 + 110 / 6371)
+const WORLD_UNITS_PER_KM = 1
+const WORLD_UNITS_PER_METER = WORLD_UNITS_PER_KM / 1000
+const EARTH_RADIUS_KM = 6371
+const EARTH_ATMOSPHERE_HEIGHT_KM = 110
+const EARTH_RADIUS = EARTH_RADIUS_KM * WORLD_UNITS_PER_KM
+const EARTH_SHELL_RADIUS = (EARTH_RADIUS_KM + EARTH_ATMOSPHERE_HEIGHT_KM) * WORLD_UNITS_PER_KM
 const EARTH_ATMOSPHERE_HEIGHT = EARTH_SHELL_RADIUS - EARTH_RADIUS
-const MAX_ASCENT_ALTITUDE = EARTH_ATMOSPHERE_HEIGHT * 1.05
-const COAST_ASCENT_RATE = EARTH_ATMOSPHERE_HEIGHT * 0.05
-const MAX_ORBITAL_DRIFT = EARTH_ATMOSPHERE_HEIGHT * 0.42
-const MAX_ARC_OFFSET = EARTH_ATMOSPHERE_HEIGHT * 0.08
-const ENDURANCE_X_OFFSET = 140
-const ENDURANCE_ALTITUDE_OFFSET = 260
-const ENDURANCE_Z_OFFSET = -1450
+const TARGET_ORBIT_ALTITUDE = 420 * WORLD_UNITS_PER_KM
+const MAX_ASCENT_ALTITUDE = TARGET_ORBIT_ALTITUDE
+const COAST_ASCENT_RATE = 0.6 * WORLD_UNITS_PER_KM
+const MAX_GROUND_ARC_DISTANCE = 2200 * WORLD_UNITS_PER_KM
+const COAST_GROUND_TRACK_RATE = 4.2 * WORLD_UNITS_PER_KM
+const MAX_CROSSRANGE_OFFSET = 26 * WORLD_UNITS_PER_KM
+const COAST_CROSSRANGE_RATE = 0.14 * WORLD_UNITS_PER_KM
+const ENDURANCE_CROSSRANGE_OFFSET = 0.46 * WORLD_UNITS_PER_KM
+const ENDURANCE_ALTITUDE = 420 * WORLD_UNITS_PER_KM
+const ENDURANCE_GROUND_ARC_DISTANCE = 2224 * WORLD_UNITS_PER_KM
+const ENDURANCE_MODEL_SCALE_METERS = 1.35
+const ENDURANCE_UP_OFFSET = 0.12 * WORLD_UNITS_PER_KM
+const ENDURANCE_RADIAL_OFFSET = 0.08 * WORLD_UNITS_PER_KM
+const ASCENT_SLOW_PHASE_SECONDS = 5
+const ASCENT_ACCEL_PHASE_SECONDS = 11
+const ASCENT_DECEL_PHASE_SECONDS = 8
+const ASCENT_SLOW_DISTANCE_FRACTION = 0.00035
 const ATMOSPHERE_POST_PATH_FADE_NEAR_WORLD = 0.35
 const ATMOSPHERE_POST_STRENGTH = 0.14
 const ATMOSPHERE_SHELL_FACE_TRANSITION_MIN_KM = 32
 const DEFAULT_AIRLIGHT = new THREE.Color(0x7fa8d4)
 const ATMOSPHERE_SUN_DIRECTION = new THREE.Vector3(0.83, 0.34, -0.45).normalize()
+const LAUNCH_SITE_LATITUDE_DEG = 28.573
+const LAUNCH_SITE_LONGITUDE_DEG = -80.649
+const EARTH_LAUNCH_ALIGNMENT_YAW_DEG = 0
+const EARTH_TEXTURE_UV_ROTATION_DEG = 0
+const EARTH_TEXTURE_UV_OFFSET_X = 0.20
 const IGNITION_HOLD_SECONDS = 1.2
 const ASCENT_SECONDS = 24
 const STAGE_ONE_SEPARATION_SECONDS = 13.2
-const END_SEQUENCE_LAUNCH_TIME = ASCENT_SECONDS + 3.4
-const LAUNCH_SURFACE_Y = 8
+const COAST_LINEAR_SECONDS = 1.2
+const TERMINAL_DECEL_SECONDS = 4.0
+const END_SEQUENCE_LAUNCH_TIME = ASCENT_SECONDS + COAST_LINEAR_SECONDS + TERMINAL_DECEL_SECONDS
+const DETACH_PIVOT_DELAY_SECONDS = 0.72
+const DETACH_KICK_PHASE_SECONDS = 0.65
+const DETACH_INITIAL_ALONG_OFFSET = -3.4 * WORLD_UNITS_PER_METER
+const DETACH_INITIAL_SIDE_OFFSET = 4.2 * WORLD_UNITS_PER_METER
+const DETACH_INITIAL_EARTH_OFFSET = 1.2 * WORLD_UNITS_PER_METER
+const DETACH_INITIAL_ALONG_SPEED = -5.2 * WORLD_UNITS_PER_METER
+const DETACH_INITIAL_SIDE_SPEED = 5.8 * WORLD_UNITS_PER_METER
+const DETACH_INITIAL_EARTH_SPEED = 4.2 * WORLD_UNITS_PER_METER
+const DETACH_KICK_ALONG_ACCEL = -18.0 * WORLD_UNITS_PER_METER
+const DETACH_KICK_SIDE_ACCEL = 12.0 * WORLD_UNITS_PER_METER
+const DETACH_KICK_EARTH_ACCEL = 10.0 * WORLD_UNITS_PER_METER
+const DETACH_LAG_GROW_SECONDS = 6.2
+const DETACH_ALONG_ACCEL_START = -2.2 * WORLD_UNITS_PER_METER
+const DETACH_ALONG_ACCEL_END = -38.0 * WORLD_UNITS_PER_METER
+const DETACH_SIDE_ACCEL_START = 1.4 * WORLD_UNITS_PER_METER
+const DETACH_SIDE_ACCEL_END = 12.0 * WORLD_UNITS_PER_METER
+const DETACH_EARTH_ACCEL_START = 1.8 * WORLD_UNITS_PER_METER
+const DETACH_EARTH_ACCEL_END = 30.0 * WORLD_UNITS_PER_METER
+const DETACH_TILT_DURATION_SECONDS = 2.0
+const DETACH_TILT_MIN_DEG = 10
+const DETACHED_TILT_MAX_DEG = 30
+const DETACHED_SPIN_MIN_RAD_PER_SEC = 0.06
+const DETACHED_SPIN_MAX_RAD_PER_SEC = 0.15
+const LAUNCH_SURFACE_Y = 0
+const EARTH_CENTER_Y = LAUNCH_SURFACE_Y - EARTH_RADIUS
 const ATMOSPHERE_VIEW_SAMPLES = 18
 const ATMOSPHERE_LIGHT_SAMPLES = 10
 const ATMOSPHERE_VISUAL_THICKNESS_BOOST = 1.7
@@ -63,8 +106,10 @@ const TMP_VEC3_B = new THREE.Vector3()
 const TMP_VEC3_C = new THREE.Vector3()
 const TMP_VEC3_D = new THREE.Vector3()
 const TMP_VEC3_E = new THREE.Vector3()
+const TMP_VEC3_F = new THREE.Vector3()
+const TMP_VEC3_G = new THREE.Vector3()
 const TMP_QUAT_A = new THREE.Quaternion()
-const EULER_A = new THREE.Euler()
+const TMP_QUAT_B = new THREE.Quaternion()
 const TMP_AP_DIR = new THREE.Vector3()
 const TMP_AP_OC = new THREE.Vector3()
 const TMP_AP_SEG_START = new THREE.Vector3()
@@ -75,6 +120,9 @@ const TMP_AP_COLOR_2 = new THREE.Color()
 const TMP_AP_AIRLIGHT = new THREE.Color()
 const TMP_AP_TRANS_RGB = new THREE.Vector3(1, 1, 1)
 const TMP_ENDURANCE_WORLD = new THREE.Vector3()
+const ROCKET_LOCAL_UP = new THREE.Vector3(0, 1, 0)
+const ROCKET_FULL_CENTER_LOCAL = new THREE.Vector3(0, 58.5, 0)
+const ROCKET_UPPER_TIP_FOCUS_LOCAL = new THREE.Vector3(0, 104.0, 0)
 const MOVEMENT_KEY_CODES = new Set([
   'KeyW',
   'KeyA',
@@ -100,6 +148,83 @@ function smoothstepRange(edge0, edge1, value) {
 
 function randomSpread(amount) {
   return (Math.random() * 2 - 1) * amount
+}
+
+function metersToWorld(valueMeters) {
+  return valueMeters * WORLD_UNITS_PER_METER
+}
+
+function latLonToDirection(latitudeDeg, longitudeDeg) {
+  const latitude = THREE.MathUtils.degToRad(latitudeDeg)
+  const longitude = THREE.MathUtils.degToRad(longitudeDeg)
+  const cosLatitude = Math.cos(latitude)
+
+  return new THREE.Vector3(
+    Math.sin(longitude) * cosLatitude,
+    Math.sin(latitude),
+    Math.cos(longitude) * cosLatitude,
+  ).normalize()
+}
+
+function computeAscentKinematics(launchTimeSeconds) {
+  const t = THREE.MathUtils.clamp(launchTimeSeconds, 0, ASCENT_SECONDS)
+  const slowPhaseDuration = Math.min(ASCENT_SLOW_PHASE_SECONDS, ASCENT_SECONDS)
+  const accelPhaseDuration = Math.min(ASCENT_ACCEL_PHASE_SECONDS, Math.max(ASCENT_SECONDS - slowPhaseDuration, 0))
+  const decelPhaseDuration = Math.max(
+    Math.min(ASCENT_DECEL_PHASE_SECONDS, ASCENT_SECONDS - slowPhaseDuration - accelPhaseDuration),
+    1e-6,
+  )
+
+  const phaseOneEnd = slowPhaseDuration
+  const phaseTwoEnd = phaseOneEnd + accelPhaseDuration
+  const slowDistance = THREE.MathUtils.clamp(ASCENT_SLOW_DISTANCE_FRACTION, 0.0001, 0.15)
+  const slowSpeed = slowDistance / Math.max(slowPhaseDuration, 1e-6)
+
+  const remainingDistance = Math.max(1 - slowDistance, 1e-6)
+  const accelNumerator = remainingDistance - slowSpeed * (accelPhaseDuration + decelPhaseDuration * 0.5)
+  const accelDenominator = 0.5 * accelPhaseDuration * (accelPhaseDuration + decelPhaseDuration)
+  const accel = Math.max(accelNumerator / Math.max(accelDenominator, 1e-6), 1e-6)
+  const peakSpeed = slowSpeed + accel * accelPhaseDuration
+  const decelMagnitude = peakSpeed / decelPhaseDuration
+
+  const accelDistance = slowSpeed * accelPhaseDuration + 0.5 * accel * accelPhaseDuration * accelPhaseDuration
+
+  if (t <= phaseOneEnd) {
+    return {
+      distance: slowSpeed * t,
+      phaseOneEnd,
+      phaseTwoEnd,
+      speed: slowSpeed,
+      totalDistance: 1,
+      velocity01: THREE.MathUtils.clamp(slowSpeed / Math.max(peakSpeed, 1e-6), 0, 1),
+    }
+  }
+
+  if (t <= phaseTwoEnd) {
+    const dt = t - phaseOneEnd
+    const speed = slowSpeed + accel * dt
+    const distance = slowDistance + slowSpeed * dt + 0.5 * accel * dt * dt
+    return {
+      distance: THREE.MathUtils.clamp(distance, 0, 1),
+      phaseOneEnd,
+      phaseTwoEnd,
+      speed,
+      totalDistance: 1,
+      velocity01: THREE.MathUtils.clamp(speed / Math.max(peakSpeed, 1e-6), 0, 1),
+    }
+  }
+
+  const dt = Math.min(t - phaseTwoEnd, decelPhaseDuration)
+  const speed = Math.max(0, peakSpeed - decelMagnitude * dt)
+  const distance = slowDistance + accelDistance + peakSpeed * dt - 0.5 * decelMagnitude * dt * dt
+  return {
+    distance: THREE.MathUtils.clamp(distance, 0, 1),
+    phaseOneEnd,
+    phaseTwoEnd,
+    speed,
+    totalDistance: 1,
+    velocity01: THREE.MathUtils.clamp(speed / Math.max(peakSpeed, 1e-6), 0, 1),
+  }
 }
 
 function scaleTriplet(values, factor) {
@@ -572,8 +697,12 @@ function createEarthSystem(earthTexture) {
   const worldNormal = normalWorld.normalize()
   const viewDirection = normalize(cameraPosition.sub(positionWorld))
 
-  const earthMaterial = new THREE.MeshBasicNodeMaterial()
-  earthMaterial.colorNode = texture(earthTexture)
+  const earthMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: earthTexture,
+    metalness: 0.0,
+    roughness: 0.96,
+  })
 
   const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_RADIUS, 144, 96), earthMaterial)
   earth.name = 'scene05-earth'
@@ -612,14 +741,14 @@ function createEarthSystem(earthTexture) {
   const atmosphereModel = createStellarAtmosphereModel(
     {
       atmosphereDensity: 1.0,
-      atmosphereHeightKm: 110,
+      atmosphereHeightKm: EARTH_ATMOSPHERE_HEIGHT_KM,
       kind: 'terrestrial',
-      radiusKm: 6371,
+      radiusKm: EARTH_RADIUS_KM,
     },
-    EARTH_RADIUS / 6371,
+    WORLD_UNITS_PER_KM,
   )
-  const atmosphereShellOpacity = uniform(0.24)
-  const atmosphereFrontFaceOpacity = uniform(0.94)
+  const atmosphereShellOpacity = uniform(1)
+  const atmosphereFrontFaceOpacity = uniform(1)
   const atmosphereBackFaceOpacity = uniform(0.0)
   const atmosphereMaterial = createStellarAtmosphereMaterial(
     uniform(ATMOSPHERE_SUN_DIRECTION.clone()),
@@ -639,6 +768,10 @@ function createEarthSystem(earthTexture) {
   group.add(atmosphere)
 
   group.position.copy(atmosphereCenter)
+  const launchSiteDirection = latLonToDirection(LAUNCH_SITE_LATITUDE_DEG, LAUNCH_SITE_LONGITUDE_DEG)
+  const launchAlignment = new THREE.Quaternion().setFromUnitVectors(launchSiteDirection, ROCKET_LOCAL_UP)
+  group.quaternion.copy(launchAlignment)
+  group.rotateY(THREE.MathUtils.degToRad(EARTH_LAUNCH_ALIGNMENT_YAW_DEG))
 
   return {
     atmosphereCenter,
@@ -737,6 +870,7 @@ function createLaunchFacility() {
     }
   }
 
+  group.scale.setScalar(WORLD_UNITS_PER_METER)
   return { group, serviceArms }
 }
 
@@ -759,16 +893,12 @@ function createEnginePlumeLayer({
   const boost = uniform(0)
 
   const plumeV = positionLocal.y.negate().div(height).clamp(0, 1)
-  const core = float(1).sub(plumeV).pow(2.25)
-  const edge = smoothstep(float(radiusBottom * 0.96), float(Math.max(radiusTop * 0.18, radiusBottom * 0.14)), positionLocal.xz.length())
-  const flicker = hash(positionLocal.mul(flickerScale).add(time.mul(flickerSpeed))).mul(0.34).add(0.66)
-  const flowNoise = mx_noise_float(
-    positionLocal
-      .mul(0.26)
-      .add(vec3(time.mul(1.5), time.mul(-1.0), time.mul(1.25))),
-  )
-  const structure = smoothstep(0.2, 0.92, flowNoise).mul(0.44).add(0.56)
-  const intensity = core.mul(edge).mul(flicker).mul(structure).mul(throttle).mul(intensityGain)
+  const core = float(1).sub(plumeV).pow(2.1)
+  const radial = positionLocal.xz.length()
+  const edgeSoft = float(1.0).sub(radial.div(radiusBottom)).clamp(0.0, 1.0)
+  const edge = edgeSoft.pow(1.35 + flickerScale * 0.012)
+  const pulse = time.mul(flickerSpeed).sin().mul(0.045).add(0.955)
+  const intensity = core.mul(edge).mul(pulse).mul(throttle).mul(intensityGain)
   const boostGain = mix(float(1.0), float(1.54), boost)
 
   const hotInner = mix(color(innerColor), color(boostOuterColor), boost.mul(boostTint))
@@ -1002,6 +1132,7 @@ function createRocket() {
     stageTwoPlumeHalo.scale.y *= 0.54
   }
 
+  group.scale.setScalar(WORLD_UNITS_PER_METER)
   return {
     group,
     stageOne,
@@ -1081,7 +1212,7 @@ function createEndurance() {
   dockingRing.rotation.x = Math.PI / 2
   group.add(dockingRing)
 
-  group.scale.setScalar(2.1)
+  group.scale.setScalar(WORLD_UNITS_PER_METER * ENDURANCE_MODEL_SCALE_METERS)
   return {
     baseColors,
     group,
@@ -1090,30 +1221,50 @@ function createEndurance() {
 }
 
 function createSpaceStars() {
-  const starCount = 2400
+  const starCount = 5200
   const data = new Float32Array(starCount * 3)
+  const colors = new Float32Array(starCount * 3)
+  const baseRadius = EARTH_RADIUS * 180
+  const tmpDir = new THREE.Vector3()
 
   for (let i = 0; i < starCount; i += 1) {
     const index = i * 3
-    const radius = EARTH_RADIUS * (2.2 + Math.random() * 1.3)
+    const phi = Math.acos(THREE.MathUtils.randFloatSpread(2))
     const theta = Math.random() * Math.PI * 2
-    const phi = Math.acos(2 * Math.random() - 1)
+    const sinPhi = Math.sin(phi)
 
-    data[index] = Math.sin(phi) * Math.cos(theta) * radius
-    data[index + 1] = Math.cos(phi) * radius
-    data[index + 2] = Math.sin(phi) * Math.sin(theta) * radius
+    tmpDir.set(
+      sinPhi * Math.cos(theta),
+      Math.cos(phi),
+      sinPhi * Math.sin(theta),
+    )
+
+    data[index] = tmpDir.x * baseRadius
+    data[index + 1] = tmpDir.y * baseRadius
+    data[index + 2] = tmpDir.z * baseRadius
+
+    const brightnessBase = THREE.MathUtils.randFloat(0.14, 0.98)
+    const flicker = Math.pow(Math.random(), 1.1)
+    const brightness = THREE.MathUtils.clamp(brightnessBase * (0.58 + flicker * 0.72), 0.06, 1.0)
+    const warmth = THREE.MathUtils.randFloat(-0.08, 0.08)
+
+    colors[index] = THREE.MathUtils.clamp(brightness + warmth * 0.5, 0.04, 1.0)
+    colors[index + 1] = THREE.MathUtils.clamp(brightness + warmth * 0.15, 0.04, 1.0)
+    colors[index + 2] = THREE.MathUtils.clamp(brightness - warmth * 0.45, 0.04, 1.0)
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
 
   const material = new THREE.PointsMaterial({
-    color: 0xd9e8ff,
-    size: 9,
-    sizeAttenuation: true,
+    color: 0xffffff,
+    size: 1.38,
+    sizeAttenuation: false,
     transparent: true,
     opacity: 0,
     depthWrite: false,
+    vertexColors: true,
   })
 
   const stars = new THREE.Points(geometry, material)
@@ -1121,140 +1272,15 @@ function createSpaceStars() {
   return stars
 }
 
-function createExhaustSystem(particleCount = 340) {
-  const positions = new Float32Array(particleCount * 3)
-  const colors = new Float32Array(particleCount * 3)
-  const life = new Float32Array(particleCount)
-  const maxLife = new Float32Array(particleCount)
-  const velocities = Array.from({ length: particleCount }, () => new THREE.Vector3())
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-
-  const material = new THREE.PointsMaterial({
-    size: 12,
-    sizeAttenuation: true,
-    transparent: true,
-    opacity: 0.74,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    vertexColors: true,
-  })
-
-  const points = new THREE.Points(geometry, material)
-  points.name = 'scene05-exhaust-particles'
-  points.frustumCulled = false
-
-  const hidden = new THREE.Vector3(1e7, 1e7, 1e7)
-  function hideParticle(index) {
-    const base = index * 3
-    positions[base] = hidden.x
-    positions[base + 1] = hidden.y
-    positions[base + 2] = hidden.z
-    colors[base] = 0
-    colors[base + 1] = 0
-    colors[base + 2] = 0
-    life[index] = 0
-    maxLife[index] = 0
-  }
-
-  for (let i = 0; i < particleCount; i += 1) {
-    hideParticle(i)
-  }
-
-  const tmpJitter = new THREE.Vector3()
-
-  function spawn(index, emitters, direction, shipVelocity, thrust, atmosphereDensity) {
-    if (emitters.length === 0) {
-      hideParticle(index)
-      return
-    }
-
-    const emitter = emitters[Math.floor(Math.random() * emitters.length)]
-    const base = index * 3
-    const radial = 0.35 + Math.random() * 1.2
-    const angle = Math.random() * Math.PI * 2
-
-    positions[base] = emitter.x + Math.cos(angle) * radial
-    positions[base + 1] = emitter.y + randomSpread(0.65)
-    positions[base + 2] = emitter.z + Math.sin(angle) * radial
-
-    tmpJitter.set(randomSpread(0.48), randomSpread(0.24), randomSpread(0.48))
-    velocities[index]
-      .copy(direction)
-      .add(tmpJitter)
-      .normalize()
-      .multiplyScalar(THREE.MathUtils.lerp(98, 175, thrust) * (0.58 + Math.random() * 0.8))
-      .addScaledVector(shipVelocity, 0.24)
-
-    maxLife[index] = THREE.MathUtils.lerp(0.36, 1.38, atmosphereDensity) * (0.65 + Math.random() * 0.75)
-    life[index] = maxLife[index]
-  }
-
-  function update(delta, emitters, direction, shipVelocity, thrust, atmosphereDensity) {
-    const safeDelta = Math.min(delta, 0.05)
-    if (safeDelta <= 0) {
-      return
-    }
-
-    for (let i = 0; i < particleCount; i += 1) {
-      life[i] -= safeDelta
-      const base = i * 3
-
-      if (life[i] <= 0) {
-        if (thrust > 0.03 && Math.random() < thrust * 1.35) {
-          spawn(i, emitters, direction, shipVelocity, thrust, atmosphereDensity)
-        } else {
-          hideParticle(i)
-        }
-        continue
-      }
-
-      positions[base] += velocities[i].x * safeDelta
-      positions[base + 1] += velocities[i].y * safeDelta
-      positions[base + 2] += velocities[i].z * safeDelta
-
-      const drag = Math.max(0, 1 - safeDelta * THREE.MathUtils.lerp(2.2, 1.05, atmosphereDensity))
-      velocities[i].multiplyScalar(drag)
-      velocities[i].y -= safeDelta * THREE.MathUtils.lerp(34, 9, 1 - atmosphereDensity)
-
-      const life01 = life[i] / Math.max(maxLife[i], 1e-6)
-      const age = 1 - life01
-      const flame = Math.pow(life01, 1.2)
-      const smoke = smoothstepRange(0.18, 1, age)
-
-      colors[base] = THREE.MathUtils.lerp(1.0, 0.46, smoke)
-      colors[base + 1] = THREE.MathUtils.lerp(0.72, 0.42, smoke)
-      colors[base + 2] = THREE.MathUtils.lerp(0.22, 0.5, smoke * atmosphereDensity) + flame * 0.12
-    }
-
-    const spawnBudget = Math.floor(particleCount * safeDelta * THREE.MathUtils.lerp(3.5, 9.5, thrust))
-    for (let i = 0; i < spawnBudget; i += 1) {
-      const index = (Math.random() * particleCount) | 0
-      if (life[index] <= 0) {
-        spawn(index, emitters, direction, shipVelocity, thrust, atmosphereDensity)
-      }
-    }
-
-    material.opacity = THREE.MathUtils.lerp(0.28, 0.82, thrust)
-    material.size = THREE.MathUtils.lerp(7.5, 14.5, atmosphereDensity)
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.color.needsUpdate = true
-  }
-
-  function clear() {
-    for (let i = 0; i < particleCount; i += 1) {
-      hideParticle(i)
-    }
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.color.needsUpdate = true
-  }
+function createExhaustSystem() {
+  const points = new THREE.Group()
+  points.name = 'scene05-exhaust-particles-disabled'
+  points.visible = false
 
   return {
-    clear,
+    clear() {},
     points,
-    update,
+    update() {},
   }
 }
 
@@ -1281,6 +1307,7 @@ export default {
     let savedBackground = null
     let movementKeyBlockHandler = null
     let mouseOrbitHandler = null
+    let hiddenExternalPointClouds = []
     const sceneBackground = new THREE.Color()
 
     const state = {
@@ -1289,79 +1316,177 @@ export default {
       orbitYaw: 0,
       previousRocketPosition: new THREE.Vector3(),
       rocketVelocity: new THREE.Vector3(),
+      rocketAcceleration: new THREE.Vector3(),
       sequenceComplete: false,
       stageOneDetached: false,
-      detachedStageVelocity: new THREE.Vector3(),
-      detachedStageAngularVelocity: new THREE.Vector3(),
+      detachedAlongOffset: 0,
+      detachedAlongSpeed: 0,
+      detachedSideOffset: 0,
+      detachedSideSpeed: 0,
+      detachedEarthOffset: 0,
+      detachedEarthSpeed: 0,
+      detachedSideSign: 1,
+      detachedSideDirection: new THREE.Vector3(1, 0, 0),
+      detachedTiltBaseQuaternion: new THREE.Quaternion(),
+      detachedTiltTargetQuaternion: new THREE.Quaternion(),
+      detachedSpinAxis: new THREE.Vector3(0, 1, 0),
+      detachedSpinRate: 0,
       separationShock: 0,
       detachedTimer: 0,
+      centerTransition01: 0,
+      enduranceSpinAngle: 0,
+    }
+
+    function getRocketGeometryCenter(target, delta) {
+      if (state.stageOneDetached) {
+        // Briefly hold pivot at full-stack center so the detach read is visible.
+        if (state.detachedTimer >= DETACH_PIVOT_DELAY_SECONDS) {
+          // Smooth over ~2 seconds after hold so camera pivot shift does not pop.
+          state.centerTransition01 = Math.min(1, state.centerTransition01 + delta * 0.5)
+        } else {
+          state.centerTransition01 = 0
+        }
+      } else {
+        state.centerTransition01 = 0
+      }
+
+      const eased = state.centerTransition01 * state.centerTransition01 * (3 - 2 * state.centerTransition01)
+      TMP_VEC3_F.copy(ROCKET_FULL_CENTER_LOCAL).lerp(ROCKET_UPPER_TIP_FOCUS_LOCAL, eased)
+      target.copy(TMP_VEC3_F).applyMatrix4(rocket.group.matrixWorld)
+      return target
     }
 
     function setRocketTransform(sequenceTime) {
       const launchTime = Math.max(sequenceTime - IGNITION_HOLD_SECONDS, 0)
-      const ascentProgress = clamp01(launchTime / ASCENT_SECONDS)
+      const kinematics = computeAscentKinematics(launchTime)
+      const ascentProgress = clamp01(kinematics.distance / kinematics.totalDistance)
       const coastTime = Math.max(launchTime - ASCENT_SECONDS, 0)
-      const easedRise = Math.pow(ascentProgress, 1.62)
-      const altitude = easedRise * MAX_ASCENT_ALTITUDE + coastTime * COAST_ASCENT_RATE
+      const coastLinearTime = Math.min(coastTime, COAST_LINEAR_SECONDS)
+      const decelElapsed = THREE.MathUtils.clamp(coastTime - COAST_LINEAR_SECONDS, 0, TERMINAL_DECEL_SECONDS)
+      const coastProgress = clamp01(decelElapsed / Math.max(TERMINAL_DECEL_SECONDS, 1e-6))
+      // Distance under constant deceleration from v0 to 0 over TERMINAL_DECEL_SECONDS.
+      const decelDistance =
+        decelElapsed - (decelElapsed * decelElapsed) / (2 * Math.max(TERMINAL_DECEL_SECONDS, 1e-6))
+      const coastDistance = coastLinearTime + decelDistance
+      const altitude = ascentProgress * MAX_ASCENT_ALTITUDE + coastDistance * COAST_ASCENT_RATE
 
-      // Hold a true vertical rise for the first segment, then gradually start the gravity turn.
-      const lateralBlend = smoothstepRange(0.46, 0.9, ascentProgress)
-      const orbitalDrift = -Math.pow(ascentProgress, 1.35) * MAX_ORBITAL_DRIFT * lateralBlend
-        - coastTime * (MAX_ORBITAL_DRIFT * 0.025)
-      const arcOffset = Math.sin(ascentProgress * Math.PI * 0.78) * MAX_ARC_OFFSET * lateralBlend
-        + coastTime * (MAX_ARC_OFFSET * 0.01)
+      // Hold near-vertical initial climb, then start the gravity turn and downrange arc.
+      const turnBlend = smoothstepRange(ASCENT_SLOW_PHASE_SECONDS, ASCENT_SECONDS * 0.86, launchTime)
+      const groundArcDistance = Math.pow(ascentProgress, 1.22) * MAX_GROUND_ARC_DISTANCE * turnBlend
+        + coastDistance * COAST_GROUND_TRACK_RATE
+      const arcAngle = groundArcDistance / EARTH_RADIUS
+      const crossrangeOffset = Math.sin(ascentProgress * Math.PI * 0.82) * MAX_CROSSRANGE_OFFSET * turnBlend
+        + coastDistance * COAST_CROSSRANGE_RATE
 
-      const pitchAmount =
-        -THREE.MathUtils.lerp(0, 0.46, smoothstepRange(0.52, 0.94, ascentProgress)) - Math.min(coastTime * 0.01, 0.06)
-      const yawAmount =
-        THREE.MathUtils.lerp(0, 0.08, smoothstepRange(0.58, 0.92, ascentProgress))
-        + Math.min(coastTime * 0.0035, 0.03)
+      const orbitRadius = EARTH_RADIUS + altitude
+      const radialY = Math.cos(arcAngle)
+      const radialZ = -Math.sin(arcAngle)
+
+      TMP_VEC3_A.set(0, radialY, radialZ).normalize()
+      TMP_VEC3_B.set(0, -Math.sin(arcAngle), -Math.cos(arcAngle)).normalize()
+
+      rocket.group.position.set(
+        crossrangeOffset,
+        EARTH_CENTER_Y + TMP_VEC3_A.y * orbitRadius,
+        TMP_VEC3_A.z * orbitRadius,
+      )
+
+      const gravityTurn = smoothstepRange(ASCENT_SLOW_PHASE_SECONDS + 0.3, ASCENT_SECONDS * 0.9, launchTime)
+      TMP_VEC3_D.copy(TMP_VEC3_A).lerp(TMP_VEC3_B, gravityTurn * 0.9).normalize()
 
       const shakeEnvelope = 1 - smoothstepRange(0.05, 0.9, ascentProgress)
       const vibration = (Math.sin(sequenceTime * 52) + Math.sin(sequenceTime * 31 + 0.7)) * 0.0024 * shakeEnvelope
       const rollAmount = Math.sin(sequenceTime * 2.5) * 0.008 * shakeEnvelope + vibration
 
-      rocket.group.position.set(arcOffset, LAUNCH_SURFACE_Y + altitude, orbitalDrift)
-      EULER_A.set(pitchAmount, yawAmount, rollAmount, 'YXZ')
-      rocket.group.quaternion.setFromEuler(EULER_A)
+      rocket.group.quaternion.setFromUnitVectors(ROCKET_LOCAL_UP, TMP_VEC3_D)
+      TMP_QUAT_B.setFromAxisAngle(TMP_VEC3_D, rollAmount)
+      rocket.group.quaternion.multiply(TMP_QUAT_B)
       rocket.group.updateMatrixWorld(true)
 
       return {
         ascentProgress,
         altitude,
+        coastProgress,
         launchTime,
+        velocity01: kinematics.velocity01,
       }
     }
 
-    function detachStageOne() {
+    function detachStageOne(camera) {
       if (state.stageOneDetached) {
         return
       }
 
       state.stageOneDetached = true
       state.detachedTimer = 0
-      state.separationShock = 1.15
+      state.separationShock = 0
+      state.centerTransition01 = 0
 
       rocket.stageOne.getWorldPosition(TMP_VEC3_A)
       rocket.stageOne.getWorldQuaternion(TMP_QUAT_A)
+      rocket.stageOne.getWorldScale(TMP_VEC3_C)
 
       rocket.group.remove(rocket.stageOne)
       sceneGroup.add(rocket.stageOne)
 
       rocket.stageOne.position.copy(TMP_VEC3_A)
       rocket.stageOne.quaternion.copy(TMP_QUAT_A)
+      rocket.stageOne.scale.copy(TMP_VEC3_C)
+      rocket.stageOne.frustumCulled = false
 
       TMP_VEC3_B.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
-      state.detachedStageVelocity
-        .copy(state.rocketVelocity)
-        .addScaledVector(TMP_VEC3_B, -96)
-        .add(new THREE.Vector3(randomSpread(12), -64, randomSpread(16)))
+      TMP_VEC3_D.set(1, 0, 0).applyQuaternion(rocket.group.quaternion).normalize()
+      TMP_VEC3_E.copy(earth.atmosphereCenter).sub(rocket.group.position).normalize()
+      TMP_VEC3_C.copy(rocket.stageOne.position).sub(rocket.group.position)
 
-      state.detachedStageAngularVelocity.set(
-        randomSpread(0.7),
-        randomSpread(0.45),
-        randomSpread(0.88),
+      state.detachedAlongOffset = TMP_VEC3_C.dot(TMP_VEC3_B)
+      state.detachedSideOffset = TMP_VEC3_C.dot(TMP_VEC3_D)
+      state.detachedEarthOffset = TMP_VEC3_C.dot(TMP_VEC3_E)
+
+      if (camera) {
+        TMP_VEC3_G.copy(camera.position).sub(rocket.group.position)
+        state.detachedSideSign = TMP_VEC3_D.dot(TMP_VEC3_G) >= 0 ? 1 : -1
+      } else {
+        state.detachedSideSign =
+          Math.abs(state.detachedSideOffset) > metersToWorld(0.01)
+            ? Math.sign(state.detachedSideOffset)
+            : (Math.random() < 0.5 ? -1 : 1)
+      }
+      state.detachedSideDirection.copy(TMP_VEC3_D).multiplyScalar(state.detachedSideSign)
+
+      // Immediate readable split so detachment is visible even with fast camera-follow ascent.
+      state.detachedAlongOffset = DETACH_INITIAL_ALONG_OFFSET
+      state.detachedSideOffset = DETACH_INITIAL_SIDE_OFFSET
+      state.detachedEarthOffset = DETACH_INITIAL_EARTH_OFFSET
+      state.detachedAlongSpeed = DETACH_INITIAL_ALONG_SPEED
+      state.detachedSideSpeed = DETACH_INITIAL_SIDE_SPEED
+      state.detachedEarthSpeed = DETACH_INITIAL_EARTH_SPEED
+
+      rocket.stageOne.position.copy(rocket.group.position)
+      rocket.stageOne.position.addScaledVector(TMP_VEC3_B, state.detachedAlongOffset)
+      rocket.stageOne.position.addScaledVector(state.detachedSideDirection, state.detachedSideOffset)
+      rocket.stageOne.position.addScaledVector(TMP_VEC3_E, state.detachedEarthOffset)
+
+      state.detachedTiltBaseQuaternion.copy(rocket.stageOne.quaternion)
+      TMP_VEC3_A.set(randomSpread(0.65), randomSpread(0.25), randomSpread(0.65))
+      if (TMP_VEC3_A.lengthSq() < 1e-6) {
+        TMP_VEC3_A.set(0, 0, 1)
+      }
+      TMP_VEC3_A.applyQuaternion(rocket.group.quaternion).normalize()
+      TMP_QUAT_B.setFromAxisAngle(
+        TMP_VEC3_A,
+        THREE.MathUtils.degToRad(THREE.MathUtils.randFloat(DETACH_TILT_MIN_DEG, DETACHED_TILT_MAX_DEG)),
       )
+      state.detachedTiltTargetQuaternion.copy(state.detachedTiltBaseQuaternion).multiply(TMP_QUAT_B)
+
+      state.detachedSpinAxis
+        .copy(state.detachedSideDirection)
+        .addScaledVector(TMP_VEC3_B, 0.55)
+        .add(new THREE.Vector3(randomSpread(0.12), randomSpread(0.12), randomSpread(0.12)))
+        .normalize()
+      state.detachedSpinRate =
+        THREE.MathUtils.randFloat(DETACHED_SPIN_MIN_RAD_PER_SEC, DETACHED_SPIN_MAX_RAD_PER_SEC) *
+        (Math.random() < 0.5 ? -1 : 1)
 
       rocket.setStageOnePlume(0)
       rocket.setStageTwoPlume(0.15)
@@ -1373,17 +1498,47 @@ export default {
       }
 
       state.detachedTimer += delta
-      state.detachedStageVelocity.y -= delta * 34
-      state.detachedStageVelocity.z += delta * 5.5
-      state.detachedStageVelocity.multiplyScalar(Math.max(0, 1 - delta * 0.12))
+      const lagBlend = smoothstepRange(0, DETACH_LAG_GROW_SECONDS, state.detachedTimer)
+      const kickBlend = 1 - smoothstepRange(0, DETACH_KICK_PHASE_SECONDS, state.detachedTimer)
 
-      rocket.stageOne.position.addScaledVector(state.detachedStageVelocity, delta)
-      rocket.stageOne.rotation.x += state.detachedStageAngularVelocity.x * delta
-      rocket.stageOne.rotation.y += state.detachedStageAngularVelocity.y * delta
-      rocket.stageOne.rotation.z += state.detachedStageAngularVelocity.z * delta
+      TMP_VEC3_A.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
+      TMP_VEC3_B.set(1, 0, 0).applyQuaternion(rocket.group.quaternion).normalize().multiplyScalar(state.detachedSideSign)
+      state.detachedSideDirection.lerp(TMP_VEC3_B, THREE.MathUtils.clamp(delta * 1.3, 0, 1)).normalize()
+      TMP_VEC3_C.copy(earth.atmosphereCenter).sub(rocket.group.position).normalize()
 
-      if (state.detachedTimer > 12) {
-        rocket.stageOne.visible = false
+      const alongAccel =
+        THREE.MathUtils.lerp(DETACH_ALONG_ACCEL_START, DETACH_ALONG_ACCEL_END, lagBlend) +
+        DETACH_KICK_ALONG_ACCEL * kickBlend
+      const sideAccel =
+        THREE.MathUtils.lerp(DETACH_SIDE_ACCEL_START, DETACH_SIDE_ACCEL_END, lagBlend) +
+        DETACH_KICK_SIDE_ACCEL * kickBlend
+      const earthAccel =
+        THREE.MathUtils.lerp(DETACH_EARTH_ACCEL_START, DETACH_EARTH_ACCEL_END, lagBlend) +
+        DETACH_KICK_EARTH_ACCEL * kickBlend
+
+      state.detachedAlongSpeed += alongAccel * delta
+      state.detachedAlongOffset += state.detachedAlongSpeed * delta
+
+      state.detachedSideSpeed += sideAccel * delta
+      state.detachedSideOffset += state.detachedSideSpeed * delta
+
+      state.detachedEarthSpeed += earthAccel * delta
+      state.detachedEarthOffset += state.detachedEarthSpeed * delta
+
+      TMP_VEC3_D.copy(rocket.group.position)
+      TMP_VEC3_D.addScaledVector(TMP_VEC3_A, state.detachedAlongOffset)
+      TMP_VEC3_D.addScaledVector(state.detachedSideDirection, state.detachedSideOffset)
+      TMP_VEC3_D.addScaledVector(TMP_VEC3_C, state.detachedEarthOffset)
+
+      rocket.stageOne.position.copy(TMP_VEC3_D)
+      if (state.detachedTimer <= DETACH_TILT_DURATION_SECONDS) {
+        const tiltT = smoothstepRange(0, DETACH_TILT_DURATION_SECONDS, state.detachedTimer)
+        rocket.stageOne.quaternion
+          .copy(state.detachedTiltBaseQuaternion)
+          .slerp(state.detachedTiltTargetQuaternion, tiltT)
+      } else {
+        TMP_QUAT_B.setFromAxisAngle(state.detachedSpinAxis, state.detachedSpinRate * delta)
+        rocket.stageOne.quaternion.multiply(TMP_QUAT_B)
       }
     }
 
@@ -1397,12 +1552,12 @@ export default {
       return emitters
     }
 
-    function updateCamera(camera, delta, sequenceTime, ascentProgress) {
-      rocket.upperStage.getWorldPosition(TMP_VEC3_A)
-      TMP_VEC3_B.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
+    function updateCamera(camera, delta, sequenceTime, ascentProgress, launchTime) {
+      getRocketGeometryCenter(TMP_VEC3_A, delta)
+      TMP_VEC3_B.copy(TMP_VEC3_A).sub(earth.atmosphereCenter).normalize()
 
-      const orbitBlend = smoothstepRange(0.08, 0.94, ascentProgress)
-      const followDistance = THREE.MathUtils.lerp(22, 236, orbitBlend)
+      const orbitBlend = smoothstepRange(ASCENT_SLOW_PHASE_SECONDS, ASCENT_SLOW_PHASE_SECONDS + 7.0, launchTime)
+      const followDistance = THREE.MathUtils.lerp(metersToWorld(16), metersToWorld(96), orbitBlend)
       const baseAzimuth = THREE.MathUtils.lerp(0.22, 0.88, orbitBlend)
       const basePitch = THREE.MathUtils.lerp(0.12, 0.28, orbitBlend)
       const azimuth = baseAzimuth + state.orbitYaw
@@ -1414,16 +1569,20 @@ export default {
           Math.sin(pitch) * followDistance,
           Math.cos(azimuth) * Math.cos(pitch) * followDistance,
         )
-        .applyQuaternion(rocket.group.quaternion)
+      TMP_QUAT_A.setFromUnitVectors(ROCKET_LOCAL_UP, TMP_VEC3_B)
+      TMP_VEC3_C.applyQuaternion(TMP_QUAT_A)
       TMP_VEC3_D.copy(TMP_VEC3_A).add(TMP_VEC3_C)
 
-      const shakeBase = (1 - smoothstepRange(0.12, 0.9, ascentProgress)) * 1.45 + state.separationShock * 0.9
+      const shakeEaseIn = smoothstepRange(0.0, 0.35, launchTime)
+      const shakeEaseOut = 1 - smoothstepRange(0.8, 3.2, launchTime)
+      const shakeEnvelope = shakeEaseIn * shakeEaseOut
+      const shakeBase = shakeEnvelope * metersToWorld(0.18)
       TMP_VEC3_E.set(randomSpread(shakeBase), randomSpread(shakeBase * 0.6), randomSpread(shakeBase))
       TMP_VEC3_D.add(TMP_VEC3_E)
 
-      camera.position.lerp(TMP_VEC3_D, 1 - Math.exp(-delta * 6.4))
-      TMP_VEC3_E.copy(TMP_VEC3_A).addScaledVector(TMP_VEC3_B, 12)
-      camera.lookAt(TMP_VEC3_E)
+      // Hard anchor camera to rocket-relative orbit target to avoid lag/drift against ascent motion.
+      camera.position.copy(TMP_VEC3_D)
+      camera.lookAt(TMP_VEC3_A)
 
       const targetFov = THREE.MathUtils.lerp(43, 57, smoothstepRange(0.18, 0.78, ascentProgress))
       if (Math.abs(camera.fov - targetFov) > 0.02) {
@@ -1432,7 +1591,7 @@ export default {
       }
 
       if (sequenceTime < IGNITION_HOLD_SECONDS + 0.2) {
-        camera.position.y += Math.sin(sequenceTime * 88) * 0.08
+        camera.position.y += Math.sin(sequenceTime * 88) * metersToWorld(0.08)
       }
     }
 
@@ -1443,7 +1602,7 @@ export default {
 
       const cameraDistance = camera.position.distanceTo(earth.atmosphereCenter)
       const altitudeFromTop = cameraDistance - EARTH_SHELL_RADIUS
-      const kmToWorld = EARTH_RADIUS / 6371
+      const kmToWorld = WORLD_UNITS_PER_KM
       const faceBlendBand = Math.max(
         ATMOSPHERE_SHELL_FACE_TRANSITION_MIN_KM * kmToWorld,
         EARTH_ATMOSPHERE_HEIGHT * 0.18,
@@ -1452,13 +1611,7 @@ export default {
 
       earth.atmosphereFrontFaceOpacity.value = THREE.MathUtils.clamp(1 - insideBlend, 0, 1)
       earth.atmosphereBackFaceOpacity.value = THREE.MathUtils.clamp(insideBlend, 0, 1)
-
-      const shellOuterFade = THREE.MathUtils.smoothstep(
-        altitudeFromTop,
-        EARTH_ATMOSPHERE_HEIGHT * 0.12,
-        EARTH_ATMOSPHERE_HEIGHT * 1.6,
-      )
-      earth.atmosphereShellOpacity.value = THREE.MathUtils.lerp(0.28, 0.12, shellOuterFade)
+      earth.atmosphereShellOpacity.value = 1
     }
 
     function updateEnduranceAtmosphereFade(camera) {
@@ -1510,8 +1663,8 @@ export default {
         savedCameraNear = camera.near
         savedCameraFar = camera.far
         savedCameraFov = camera.fov
-        camera.near = 0.2
-        camera.far = 180000
+        camera.near = metersToWorld(5)
+        camera.far = 240000
         camera.fov = 45
         camera.updateProjectionMatrix()
 
@@ -1522,10 +1675,10 @@ export default {
         }
         scene.background = SKY_COLOR.clone()
 
-        ambientLight = new THREE.HemisphereLight(0xd5e7ff, 0x2f2619, 1.15)
-        sunLight = new THREE.DirectionalLight(0xfff0d8, 1.9)
-        rimLight = new THREE.DirectionalLight(0x7ba7ff, 0.7)
-        engineLight = new THREE.PointLight(0xff9e47, 0, 340, 1.9)
+        ambientLight = new THREE.HemisphereLight(0xd5e7ff, 0x2f2619, 0.72)
+        sunLight = new THREE.DirectionalLight(0xfff0d8, 2.05)
+        rimLight = new THREE.DirectionalLight(0x7ba7ff, 0.55)
+        engineLight = new THREE.PointLight(0xff9e47, 0, metersToWorld(340), 1.9)
 
         sunLight.position.set(760, 1140, 580)
         rimLight.position.set(-980, 340, -920)
@@ -1536,6 +1689,9 @@ export default {
         earthTexture.colorSpace = THREE.SRGBColorSpace
         earthTexture.wrapS = THREE.RepeatWrapping
         earthTexture.wrapT = THREE.ClampToEdgeWrapping
+        earthTexture.center.set(0.5, 0.5)
+        earthTexture.offset.set(EARTH_TEXTURE_UV_OFFSET_X, 0)
+        earthTexture.rotation = THREE.MathUtils.degToRad(EARTH_TEXTURE_UV_ROTATION_DEG)
         earthTexture.generateMipmaps = true
         if (renderer?.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') {
           earthTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
@@ -1556,21 +1712,45 @@ export default {
         sceneGroup.add(endurance.group)
         sceneGroup.add(stars)
 
-        rocket.group.position.set(0, LAUNCH_SURFACE_Y, 0)
-        rocket.group.updateMatrixWorld(true)
+        hiddenExternalPointClouds = []
+        scene.traverse((object) => {
+          if (!object?.isPoints) {
+            return
+          }
+          if (object === stars || object.name === 'scene05-space-stars') {
+            return
+          }
+
+          hiddenExternalPointClouds.push({
+            object,
+            visible: object.visible,
+          })
+          object.visible = false
+        })
+
+        setRocketTransform(0)
         state.previousRocketPosition.copy(rocket.group.position)
         rocket.setStageOnePlume(0)
         rocket.setStageTwoPlume(0)
 
-        endurance.group.position.set(
-          ENDURANCE_X_OFFSET,
-          LAUNCH_SURFACE_Y + MAX_ASCENT_ALTITUDE + ENDURANCE_ALTITUDE_OFFSET,
-          ENDURANCE_Z_OFFSET,
-        )
+        const previewSequenceTime = IGNITION_HOLD_SECONDS + END_SEQUENCE_LAUNCH_TIME
+        setRocketTransform(previewSequenceTime)
+        getRocketGeometryCenter(TMP_VEC3_A, 0)
+        TMP_VEC3_B.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
+        TMP_VEC3_C.set(1, 0, 0).applyQuaternion(rocket.group.quaternion).normalize()
+        TMP_VEC3_D.copy(TMP_VEC3_A).sub(earth.atmosphereCenter).normalize()
+
+        endurance.group.position.copy(TMP_VEC3_A)
+        endurance.group.position.addScaledVector(TMP_VEC3_C, ENDURANCE_CROSSRANGE_OFFSET)
+        endurance.group.position.addScaledVector(TMP_VEC3_B, ENDURANCE_UP_OFFSET)
+        endurance.group.position.addScaledVector(TMP_VEC3_D, ENDURANCE_RADIAL_OFFSET)
         endurance.group.rotation.set(0.46, -0.12, 0.9)
 
-        camera.position.set(10.5, 68, 18.5)
-        camera.lookAt(0, LAUNCH_SURFACE_Y + 66, 0)
+        setRocketTransform(0)
+        state.previousRocketPosition.copy(rocket.group.position)
+
+        camera.position.set(metersToWorld(10.5), metersToWorld(68), metersToWorld(18.5))
+        camera.lookAt(0, LAUNCH_SURFACE_Y + metersToWorld(66), 0)
 
         movementKeyBlockHandler = (event) => {
           if (!MOVEMENT_KEY_CODES.has(event.code)) {
@@ -1616,6 +1796,8 @@ export default {
         let trajectory = setRocketTransform(sequenceTime)
         let ascentProgress = trajectory.ascentProgress
         let altitude = trajectory.altitude
+        let coastProgress = trajectory.coastProgress
+        let velocity01 = trajectory.velocity01
 
         if (!state.sequenceComplete && trajectory.launchTime >= END_SEQUENCE_LAUNCH_TIME) {
           state.sequenceComplete = true
@@ -1623,6 +1805,8 @@ export default {
           trajectory = setRocketTransform(state.elapsed)
           ascentProgress = trajectory.ascentProgress
           altitude = trajectory.altitude
+          coastProgress = trajectory.coastProgress
+          velocity01 = trajectory.velocity01
           state.separationShock = 0
           exhaust.clear()
           exhaust.points.visible = false
@@ -1632,17 +1816,20 @@ export default {
 
         if (state.sequenceComplete) {
           state.rocketVelocity.set(0, 0, 0)
+          state.rocketAcceleration.set(0, 0, 0)
         } else {
-          state.rocketVelocity
+          TMP_VEC3_G
             .copy(rocket.group.position)
             .sub(state.previousRocketPosition)
             .multiplyScalar(1 / Math.max(safeDelta, 1e-4))
+          state.rocketAcceleration.copy(TMP_VEC3_G).sub(state.rocketVelocity).multiplyScalar(1 / Math.max(safeDelta, 1e-4))
+          state.rocketVelocity.copy(TMP_VEC3_G)
         }
         state.previousRocketPosition.copy(rocket.group.position)
 
         const ignitionBlend = smoothstepRange(IGNITION_HOLD_SECONDS - 0.5, IGNITION_HOLD_SECONDS + 0.45, sequenceTime)
         if (!state.stageOneDetached && trajectory.launchTime >= STAGE_ONE_SEPARATION_SECONDS) {
-          detachStageOne()
+          detachStageOne(camera)
         }
 
         if (!state.sequenceComplete) {
@@ -1653,8 +1840,12 @@ export default {
         updateEarthAtmosphereShell(camera)
 
         const stageTwoBlend = smoothstepRange(STAGE_ONE_SEPARATION_SECONDS, STAGE_ONE_SEPARATION_SECONDS + 2.5, trajectory.launchTime)
-        const activeThrust = state.stageOneDetached ? THREE.MathUtils.lerp(0.52, 0.86, stageTwoBlend) : ignitionBlend
-        const thrust = state.sequenceComplete ? 0 : activeThrust
+        const velocityBoost = THREE.MathUtils.lerp(0.8, 1.2, velocity01)
+        const activeThrust = state.stageOneDetached
+          ? THREE.MathUtils.lerp(0.52, 0.86, stageTwoBlend) * velocityBoost
+          : ignitionBlend * THREE.MathUtils.lerp(0.75, 1.05, velocity01)
+        const terminalThrottle = 1 - smoothstepRange(0, 1, coastProgress)
+        const thrust = state.sequenceComplete ? 0 : activeThrust * terminalThrottle
 
         if (state.sequenceComplete) {
           rocket.setStageOnePlume(0)
@@ -1671,8 +1862,13 @@ export default {
 
         const emitters = collectEngineEmitters()
         TMP_VEC3_A.set(0, -1, 0).applyQuaternion(rocket.group.quaternion).normalize()
-        const atmosphereDensity = 1 - smoothstepRange(0.34, 0.84, ascentProgress)
+        const atmosphereDensity =
+          1 - smoothstepRange(EARTH_ATMOSPHERE_HEIGHT * 0.1, EARTH_ATMOSPHERE_HEIGHT * 0.95, altitude)
+        const exhaustEnabled = atmosphereDensity > 0.45 && thrust > 0.02
         if (state.sequenceComplete) {
+          exhaust.points.visible = false
+        } else if (!exhaustEnabled) {
+          exhaust.clear()
           exhaust.points.visible = false
         } else {
           exhaust.points.visible = true
@@ -1686,7 +1882,6 @@ export default {
           )
         }
 
-        launchFacility.group.visible = ascentProgress < 0.58
         const armRetract = smoothstepRange(IGNITION_HOLD_SECONDS - 0.32, IGNITION_HOLD_SECONDS + 1.15, sequenceTime)
         for (let i = 0; i < launchFacility.serviceArms.length; i += 1) {
           const arm = launchFacility.serviceArms[i]
@@ -1695,19 +1890,19 @@ export default {
         }
 
         const spaceBlend = smoothstepRange(
-          EARTH_ATMOSPHERE_HEIGHT * 0.18,
-          EARTH_ATMOSPHERE_HEIGHT * 0.62,
+          EARTH_ATMOSPHERE_HEIGHT * 0.1,
+          EARTH_ATMOSPHERE_HEIGHT * 0.5,
           altitude,
         )
         sceneBackground.copy(SKY_COLOR).lerp(SPACE_COLOR, spaceBlend)
         scene.background = sceneBackground
 
-        ambientLight.intensity = THREE.MathUtils.lerp(1.15, 0.34, spaceBlend)
-        sunLight.intensity = THREE.MathUtils.lerp(1.85, 2.35, spaceBlend)
-        rimLight.intensity = THREE.MathUtils.lerp(0.7, 1.16, spaceBlend)
+        ambientLight.intensity = THREE.MathUtils.lerp(0.72, 0.22, spaceBlend)
+        sunLight.intensity = THREE.MathUtils.lerp(2.05, 2.4, spaceBlend)
+        rimLight.intensity = THREE.MathUtils.lerp(0.55, 0.9, spaceBlend)
 
         engineLight.intensity = state.sequenceComplete ? 0 : THREE.MathUtils.lerp(0, 9.4, thrust)
-        TMP_VEC3_B.copy(emitters[0] ?? rocket.group.position).add(TMP_VEC3_A.clone().multiplyScalar(8))
+        TMP_VEC3_B.copy(emitters[0] ?? rocket.group.position).add(TMP_VEC3_A.clone().multiplyScalar(metersToWorld(8)))
         engineLight.position.copy(TMP_VEC3_B)
 
         if (!state.sequenceComplete) {
@@ -1716,24 +1911,21 @@ export default {
           earth.atmosphere.rotation.y += safeDelta * 0.004
         }
 
-        if (!state.sequenceComplete) {
-          endurance.group.rotation.z += safeDelta * 0.11
-          endurance.group.rotation.x = 0.42 + Math.sin(sequenceTime * 0.08) * 0.02
-        }
+        state.enduranceSpinAngle += safeDelta * 0.12
+        endurance.group.rotation.set(0.46, -0.12, 0.9 + state.enduranceSpinAngle)
         updateEnduranceAtmosphereFade(camera)
 
-        stars.position.copy(camera.position)
         stars.material.opacity = THREE.MathUtils.lerp(
           0,
           0.86,
           smoothstepRange(
-            EARTH_ATMOSPHERE_HEIGHT * 0.28,
-            EARTH_ATMOSPHERE_HEIGHT * 0.78,
+            EARTH_ATMOSPHERE_HEIGHT * 0.2,
+            EARTH_ATMOSPHERE_HEIGHT * 0.65,
             altitude,
           ),
         )
 
-        updateCamera(camera, safeDelta, sequenceTime, ascentProgress)
+        updateCamera(camera, safeDelta, sequenceTime, ascentProgress, trajectory.launchTime)
       },
 
       resize() {},
@@ -1759,6 +1951,15 @@ export default {
         if (scene) {
           scene.background = savedBackground ?? new THREE.Color(0x02040a)
         }
+
+        for (let i = 0; i < hiddenExternalPointClouds.length; i += 1) {
+          const entry = hiddenExternalPointClouds[i]
+          if (!entry?.object) {
+            continue
+          }
+          entry.object.visible = entry.visible
+        }
+        hiddenExternalPointClouds = []
 
         if (sceneGroup) {
           if (rootRef && sceneGroup.parent !== rootRef) {
