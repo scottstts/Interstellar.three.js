@@ -334,7 +334,7 @@ function createTarsDecalTexture() {
 
   context.font = 'bold 240px sans-serif'
   context.scale(1, 1.2)
-  context.fillText('TARS', width * 0.5, (height * 0.48) / 1.2)
+  context.fillText('CASE', width * 0.5, (height * 0.48) / 1.2)
   context.scale(1, 1 / 1.2)
 
   context.font = 'bold 40px sans-serif'
