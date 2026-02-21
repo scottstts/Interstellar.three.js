@@ -1372,21 +1372,26 @@ function createEndurance() {
   group.name = 'scene05-endurance'
 
   const hullWhite = new THREE.MeshStandardMaterial({
-    color: 0xdfe5ec,
-    metalness: 0.68,
-    roughness: 0.34,
+    color: 0xdddddd,
+    roughness: 0.4,
+    metalness: 0.6,
   })
   const hullDark = new THREE.MeshStandardMaterial({
-    color: 0x4f5967,
-    metalness: 0.54,
-    roughness: 0.42,
+    color: 0x333333,
+    roughness: 0.5,
+    metalness: 0.7,
   })
-  const blackPanel = new THREE.MeshStandardMaterial({
-    color: 0x1e2430,
-    metalness: 0.3,
-    roughness: 0.56,
+  const solarPanel = new THREE.MeshStandardMaterial({
+    color: 0x111111,
+    roughness: 0.15,
+    metalness: 0.9,
   })
-  const materials = [hullWhite, hullDark, blackPanel]
+  const glossBlack = new THREE.MeshStandardMaterial({
+    color: 0x050505,
+    roughness: 0.05,
+    metalness: 0.8,
+  })
+  const materials = [hullWhite, hullDark, solarPanel, glossBlack]
   const baseColors = materials.map((material) => material.color.clone())
 
   for (const material of materials) {
@@ -1394,46 +1399,134 @@ function createEndurance() {
     material.opacity = 1
   }
 
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 18, 24), hullDark)
-  hub.rotation.z = Math.PI / 2
-  group.add(hub)
-
-  const spindle = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 36, 16), hullWhite)
-  spindle.rotation.x = Math.PI / 2
-  group.add(spindle)
-
-  const ringRadius = 27
+  const ringRadius = 32
   const moduleCount = 12
   for (let i = 0; i < moduleCount; i += 1) {
     const angle = (i / moduleCount) * Math.PI * 2
-    const modulePivot = new THREE.Group()
-    modulePivot.position.set(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, 0)
-    modulePivot.rotation.z = angle + Math.PI / 2
+    const moduleGroup = new THREE.Group()
 
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(13, 7.2, 3.2), hullWhite)
-    frame.castShadow = true
-    modulePivot.add(frame)
+    const base = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 10), hullWhite)
+    base.castShadow = true
+    base.receiveShadow = true
+    moduleGroup.add(base)
 
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(10.5, 4.2, 1.1), blackPanel)
-    panel.position.z = 2.05
-    modulePivot.add(panel)
+    const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), solarPanel)
+    innerPanel.position.set(0, 0, -4.6)
+    innerPanel.castShadow = true
+    innerPanel.receiveShadow = true
+    moduleGroup.add(innerPanel)
 
-    const rear = new THREE.Mesh(new THREE.BoxGeometry(4.4, 5.4, 2.2), hullDark)
-    rear.position.x = -5.2
-    modulePivot.add(rear)
+    const sideDetail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 4), hullDark)
+    sideDetail.position.set(0, 0, 1)
+    moduleGroup.add(sideDetail)
 
-    group.add(modulePivot)
+    moduleGroup.position.set(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, 0)
+    moduleGroup.rotation.z = angle + Math.PI / 2
+    moduleGroup.lookAt(0, 0, 0)
+    group.add(moduleGroup)
 
-    const truss = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, ringRadius - 4.8, 8), hullDark)
-    truss.position.set(Math.cos(angle) * (ringRadius * 0.5), Math.sin(angle) * (ringRadius * 0.5), 0)
-    truss.rotation.z = angle + Math.PI / 2
-    group.add(truss)
+    const jointAngle = angle + Math.PI / moduleCount
+    const jointGroup = new THREE.Group()
+    jointGroup.position.set(Math.cos(jointAngle) * ringRadius, Math.sin(jointAngle) * ringRadius, 0)
+    jointGroup.rotation.z = jointAngle
+
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 9, 32), hullWhite)
+    tube.castShadow = true
+    tube.receiveShadow = true
+    jointGroup.add(tube)
+
+    const jointCenter = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 2.5, 32), hullWhite)
+    jointGroup.add(jointCenter)
+
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.5, 32), glossBlack)
+    port.rotation.z = Math.PI / 2
+    jointGroup.add(port)
+
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32), hullDark)
+    rim.rotation.z = Math.PI / 2
+    jointGroup.add(rim)
+
+    group.add(jointGroup)
   }
 
-  const dockingRing = new THREE.Mesh(new THREE.TorusGeometry(6.5, 0.7, 12, 32), hullWhite)
-  dockingRing.position.set(0, 0, -9.5)
-  dockingRing.rotation.x = Math.PI / 2
-  group.add(dockingRing)
+  const poleLength = ringRadius - 5
+  const poleGroup = new THREE.Group()
+  poleGroup.position.set(0, poleLength / 2 + 2, 0)
+
+  const poleCore = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, poleLength, 32), hullWhite)
+  poleCore.castShadow = true
+  poleCore.receiveShadow = true
+  poleGroup.add(poleCore)
+
+  for (let i = -1; i <= 1; i += 1) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 2, 32), hullDark)
+    ring.position.y = i * (poleLength / 3)
+    poleGroup.add(ring)
+  }
+  group.add(poleGroup)
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3, 32), hullWhite)
+  hub.rotation.x = Math.PI / 2
+  hub.castShadow = true
+  hub.receiveShadow = true
+  group.add(hub)
+
+  const dockRing = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 16, 64), hullDark)
+  dockRing.position.z = 1.5
+  group.add(dockRing)
+
+  const ranger = new THREE.Group()
+
+  const fuseGeo = new THREE.ConeGeometry(4.5, 10, 4)
+  fuseGeo.rotateY(Math.PI / 4)
+  fuseGeo.rotateX(Math.PI / 2)
+  fuseGeo.scale(1.1, 0.2, 1.0)
+
+  const fuseBase = new THREE.Mesh(fuseGeo, hullWhite)
+  fuseBase.castShadow = true
+  fuseBase.receiveShadow = true
+  ranger.add(fuseBase)
+
+  const underGeo = fuseGeo.clone()
+  underGeo.scale(0.98, 0.5, 0.98)
+  underGeo.translate(0, -0.15, 0)
+
+  const under = new THREE.Mesh(underGeo, hullDark)
+  under.castShadow = true
+  ranger.add(under)
+
+  const cockpitBlock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 3.5), hullWhite)
+  cockpitBlock.position.set(0, 0.4, 0)
+  cockpitBlock.rotation.x = Math.PI / 16
+  cockpitBlock.castShadow = true
+  ranger.add(cockpitBlock)
+
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.5), glossBlack)
+  canopy.position.set(0, 0.7, 1.2)
+  canopy.rotation.x = Math.PI / 6
+  ranger.add(canopy)
+
+  const wingGeo = new THREE.BoxGeometry(3.5, 0.2, 4.0)
+
+  const wingLeft = new THREE.Mesh(wingGeo, hullWhite)
+  wingLeft.position.set(-2.8, 0, -2.5)
+  wingLeft.rotation.y = Math.PI / 8
+  wingLeft.castShadow = true
+  ranger.add(wingLeft)
+
+  const wingRight = new THREE.Mesh(wingGeo, hullWhite)
+  wingRight.position.set(2.8, 0, -2.5)
+  wingRight.rotation.y = -Math.PI / 8
+  wingRight.castShadow = true
+  ranger.add(wingRight)
+
+  const engines = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 1.5), hullDark)
+  engines.position.set(0, -0.1, -4.8)
+  ranger.add(engines)
+
+  ranger.position.set(0, 0, 7.5)
+  ranger.rotation.set(0, 0, 0)
+  group.add(ranger)
 
   group.scale.setScalar(WORLD_UNITS_PER_METER * ENDURANCE_MODEL_SCALE_METERS)
   return {
