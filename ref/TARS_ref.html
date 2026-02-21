@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TARS - Three.js TSL</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #dcbba8; }
+        canvas { display: block; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-family: sans-serif; color: #333; font-size: 1.2rem;
+        }
+    </style>
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/",
+                "three/nodes": "https://unpkg.com/three@0.164.0/examples/jsm/nodes/Nodes.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="loading">Initializing WebGPU / TSL...</div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // Import TSL elements
+        import WebGPURenderer from 'three/addons/renderers/webgpu/WebGPURenderer.js';
+        import {
+            color, texture, normalLocal, uv, float, vec2, vec3, vec4, mix,
+            step, fract, sin, max, length, MeshStandardNodeMaterial
+        } from 'three/nodes';
+
+        let camera, scene, renderer, controls;
+
+        // --- 1. Generate Decal Texture for "TARS" and Screens ---
+        function createDecalTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; 
+            canvas.height = 4096; 
+            const ctx = canvas.getContext('2d');
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Black Screens
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(w * 0.1, h * 0.28, w * 0.8, h * 0.08); // Upper
+            ctx.fillRect(w * 0.1, h * 0.72, w * 0.38, h * 0.12); // Lower left
+            ctx.fillRect(w * 0.52, h * 0.72, w * 0.38, h * 0.12); // Lower right
+
+            // TARS Text
+            ctx.fillStyle = '#a55a30';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            ctx.font = 'bold 40px sans-serif';
+            ctx.fillText("MARINE CORPS", w * 0.5, h * 0.43);
+            
+            ctx.font = 'bold 240px sans-serif';
+            ctx.scale(1, 1.2);
+            ctx.fillText("TARS", w * 0.5, (h * 0.48) / 1.2);
+            ctx.scale(1, 1/1.2);
+            
+            ctx.font = 'bold 40px sans-serif';
+            ctx.fillText("U.S.M.C.", w * 0.5, h * 0.53);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = 16;
+            return tex;
+        }
+
+        const decalTexture = createDecalTexture();
+
+        // --- 2. TSL Material Factory ---
+        function createTarsMaterial(options = {}) {
+            const material = new MeshStandardNodeMaterial();
+
+            const baseColor = color(0.55, 0.55, 0.55); 
+            const darkColor = color(0.1, 0.1, 0.1);    
+            const baseMetalness = float(0.85);
+            const currentUv = uv();
+
+            // Procedural Brushed Metal Noise
+            const noise = fract(sin(currentUv.x.mul(800.0).add(currentUv.y.mul(20.0))).mul(43758.5453));
+            const baseRoughness = mix(float(0.3), float(0.45), noise);
+
+            // Procedural Grid Lines
+            const gridScale = vec2(3.0, 30.0);
+            const gridUv = currentUv.mul(gridScale);
+            const lineThickness = float(0.08);
+            
+            const gridX = step(lineThickness, fract(gridUv.x)).mul(step(lineThickness, float(1.0).sub(fract(gridUv.x))));
+            const gridY = step(lineThickness, fract(gridUv.y)).mul(step(lineThickness, float(1.0).sub(fract(gridUv.y))));
+            const isGridSquare = gridX.mul(gridY);
+            const isGroove = float(1.0).sub(isGridSquare);
+
+            const isTopOrBottom = max(step(float(0.88), currentUv.y), step(currentUv.y, float(0.12)));
+            const isVerticalFace = step(float(0.5), normalLocal.x.abs().add(normalLocal.z.abs()));
+            
+            const finalGroove = isGroove.mul(isTopOrBottom).mul(isVerticalFace);
+
+            let finalColor = mix(baseColor, darkColor, finalGroove.mul(float(0.8)));
+            let finalRoughness = mix(baseRoughness, float(0.9), finalGroove);
+
+            // Dynamic Decals
+            if (options.hasDecals) {
+                const decalNode = texture(decalTexture);
+                const isFrontFace = step(float(0.9), normalLocal.z); 
+                const hasDecal = step(float(0.1), decalNode.a).mul(isFrontFace);
+                const isScreen = step(decalNode.r, float(0.1)).mul(hasDecal);
+                
+                finalColor = mix(finalColor, decalNode, hasDecal);
+                finalRoughness = mix(finalRoughness, float(0.05), isScreen);
+                const finalMetal = mix(baseMetalness, float(0.0), isScreen);
+                
+                material.metalnessNode = finalMetal;
+            } else {
+                material.metalnessNode = baseMetalness;
+            }
+
+            // Procedural Circular Joint
+            if (options.hasCircle) {
+                const isRightFace = step(float(0.9), normalLocal.x);
+                const centerDist = length(currentUv.sub(vec2(0.5, 0.65)));
+                
+                const outerCircle = step(centerDist, float(0.15));
+                const innerCircle = step(centerDist, float(0.13));
+                const centerHole = step(centerDist, float(0.05));
+                
+                const jointGroove = max(outerCircle.sub(innerCircle), centerHole).mul(isRightFace);
+
+                finalColor = mix(finalColor, darkColor, jointGroove);
+                finalRoughness = mix(finalRoughness, float(0.8), jointGroove);
+            }
+
+            material.colorNode = finalColor;
+            material.roughnessNode = finalRoughness;
+            return material;
+        }
+
+        async function init() {
+            renderer = new WebGPURenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor('#dcbba8'); 
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.body.appendChild(renderer.domElement);
+
+            document.getElementById('loading').style.display = 'none';
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(-3, 1.5, 8);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 2, 0);
+            controls.enableDamping = true;
+            controls.maxPolarAngle = Math.PI / 2 + 0.1;
+
+            // --- Lighting ---
+            scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+            const keyLight = new THREE.DirectionalLight(0xffeedd, 3.0);
+            keyLight.position.set(5, 5, 4);
+            scene.add(keyLight);
+            const fillLight = new THREE.DirectionalLight(0xcceeff, 1.5);
+            fillLight.position.set(-5, 0, 2);
+            scene.add(fillLight);
+            const rimLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            rimLight.position.set(0, 5, -5);
+            scene.add(rimLight);
+
+            // --- Build TARS Geometry ---
+            const w = 0.65;
+            const h = 5.0;
+            const d = 0.65;
+            const gap = 0.02;
+
+            const geometry = new THREE.BoxGeometry(w, h, d);
+            
+            const matBase = createTarsMaterial();
+            const matDecal = createTarsMaterial({ hasDecals: true });
+            const matCircle = createTarsMaterial({ hasCircle: true });
+
+            const tarsGroup = new THREE.Group();
+
+            // Setup angles to perfectly flush the pairs
+            const angleForward = 0.25;
+            const angleBackward = -0.25;
+
+            // Leg 1 (Outer Left) - Angled towards camera
+            const leg1 = new THREE.Mesh(geometry, matBase);
+            leg1.position.x = -w * 1.5 - gap * 1.5;
+            leg1.rotation.x = angleForward; 
+            tarsGroup.add(leg1);
+
+            // Leg 2 (Inner Left - TARS) - Angled away from camera
+            const leg2 = new THREE.Mesh(geometry, matDecal);
+            leg2.position.x = -w * 0.5 - gap * 0.5;
+            leg2.rotation.x = angleBackward; 
+            tarsGroup.add(leg2);
+
+            // Leg 3 (Inner Right) - Perfectly flush with Leg 2
+            const leg3 = new THREE.Mesh(geometry, matBase);
+            leg3.position.x = w * 0.5 + gap * 0.5;
+            leg3.rotation.x = angleBackward; 
+            tarsGroup.add(leg3);
+
+            // Leg 4 (Outer Right - Circle) - Perfectly flush with Leg 1
+            const leg4 = new THREE.Mesh(geometry, matCircle);
+            leg4.position.x = w * 1.5 + gap * 1.5;
+            leg4.rotation.x = angleForward; 
+            tarsGroup.add(leg4);
+
+            tarsGroup.position.y = h / 2;
+            scene.add(tarsGroup);
+
+            // --- Render Loop ---
+            renderer.setAnimationLoop(() => {
+                controls.update();
+                renderer.render(scene, camera);
+            });
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>

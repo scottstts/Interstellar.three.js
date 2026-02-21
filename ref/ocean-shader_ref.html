@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photorealistic Ocean — Three.js TSL</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #020c18; }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    color: rgba(200, 230, 255, 0.32);
+    font: 11px/1 'Courier New', monospace;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">drag · scroll to zoom · right-drag to pan</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":         "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.webgpu.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+const {
+  Fn, uniform, vec2, vec3, float,
+  sin, cos, exp,
+  dot, normalize, reflect, length,
+  mix, clamp, pow, smoothstep,
+  varying,
+  positionLocal, positionWorld, cameraPosition
+} = THREE;
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ════════════════════════════════════════════════════════════
+//  RENDERER
+// ════════════════════════════════════════════════════════════
+const renderer = new THREE.WebGPURenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping  = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+document.body.appendChild(renderer.domElement);
+await renderer.init();
+
+// ════════════════════════════════════════════════════════════
+//  SCENE · CAMERA · CONTROLS
+// ════════════════════════════════════════════════════════════
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 3000);
+camera.position.set(0, 14, 52);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2, 0);
+controls.minPolarAngle = 0.05;
+controls.maxPolarAngle = Math.PI * 0.485;
+controls.minDistance   = 6;
+controls.maxDistance   = 450;
+controls.enableDamping = true;
+controls.dampingFactor = 0.04;
+
+// ════════════════════════════════════════════════════════════
+//  SHARED UNIFORMS
+// ════════════════════════════════════════════════════════════
+const timeU  = uniform(0.0);
+// Sun direction: from scene toward the sun (points upward & to the right)
+const sunDir = uniform(new THREE.Vector3(-0.28, 0.62, -0.73).normalize());
+
+// ════════════════════════════════════════════════════════════
+//  PROCEDURAL SKY  (also used for reflections)
+// ════════════════════════════════════════════════════════════
+const skyColor = Fn(([dir]) => {
+  const y = dir.y;
+
+  // Four-stop gradient: below-horizon → horizon → lower-sky → mid → zenith
+  const belowC  = vec3(0.52, 0.68, 0.88);
+  const horizC  = vec3(0.76, 0.87, 0.99);
+  const lowerC  = vec3(0.50, 0.72, 0.95);
+  const midC    = vec3(0.19, 0.44, 0.83);
+  const zenithC = vec3(0.04, 0.13, 0.52);
+
+  const t0 = smoothstep(float(-0.10), float(0.0),  y);   // sub-horizon → horizon
+  const t1 = smoothstep(float( 0.0),  float(0.28), y);   // horizon → lower
+  const t2 = smoothstep(float( 0.28), float(0.85), y);   // lower → zenith
+
+  const grad = mix(
+    mix(belowC, horizC, t0),
+    mix(lowerC, mix(midC, zenithC, t2), t1),
+    t1
+  );
+
+  // Sun disk + halo + glare
+  const sd    = clamp(dot(dir, sunDir), float(0), float(1));
+  const disk  = pow(sd, float(5000.0)).mul(50.0);
+  const halo  = pow(sd, float(20.0)).mul(2.8);
+  const glare = pow(sd, float(4.0)).mul(0.5);
+
+  return grad
+    .add(vec3(1.00, 0.95, 0.75).mul(disk))
+    .add(vec3(1.00, 0.72, 0.32).mul(halo))
+    .add(vec3(1.00, 0.80, 0.50).mul(glare));
+});
+
+// Sky dome (rendered from inside)
+const skyMat = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide });
+skyMat.colorNode = skyColor(normalize(positionLocal.xyz));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 16), skyMat));
+
+// ════════════════════════════════════════════════════════════
+//  GERSTNER WAVES
+//
+//  Each entry: [dirX, dirZ, amplitude(m), wavelength(m), steepness Q]
+//  Gerstner wave equations (GPU Gems):
+//    P.x += Q*A * D.x * cos(k·dot(D,P) − ω·t)
+//    P.y += A        * sin(k·dot(D,P) − ω·t)
+//    P.z += Q*A * D.z * cos(k·dot(D,P) − ω·t)
+//  Normal:
+//    N.x  = −sum(D.x · k·A · sin(f))
+//    N.y  =  1 − sum(Q · k·A · cos(f))
+//    N.z  = −sum(D.z · k·A · sin(f))
+// ════════════════════════════════════════════════════════════
+const WAVES = [
+  //  dX     dZ    amp    len   Q
+  [ 0.940,  0.320, 0.380, 28.0, 0.50 ],
+  [-0.420,  0.910, 0.240, 18.0, 0.46 ],
+  [ 0.780, -0.520, 0.160, 12.0, 0.42 ],
+  [-0.350, -0.780, 0.100, 10.0, 0.35 ],
+  [ 0.550,  0.620, 0.060,  9.5, 0.28 ],
+];
+
+// ── Displaced vertex position ──────────────────────────────
+const wavePosition = Fn(([px, pz]) => {
+  let dx = float(0), dy = float(0), dz = float(0);
+
+  for (const [dX, dZ, amp, len, steep] of WAVES) {
+    const k     = 2 * Math.PI / len;
+    const omega = Math.sqrt(9.81 * k);
+    const qa    = steep * amp;   // Q·A  →  horizontal displacement amplitude
+
+    const phase = float(k)
+      .mul(float(dX).mul(px).add(float(dZ).mul(pz)))
+      .sub(float(omega).mul(timeU));
+
+    dx = dx.add(float(dX * qa).mul(cos(phase)));
+    dy = dy.add(float(amp).mul(sin(phase)));
+    dz = dz.add(float(dZ * qa).mul(cos(phase)));
+  }
+
+  return vec3(px.add(dx), dy, pz.add(dz));
+});
+
+// ── Analytical surface normal from wave derivatives ────────
+const waveNormal = Fn(([px, pz]) => {
+  let nx = float(0), ny = float(0), nz = float(0);
+
+  for (const [dX, dZ, amp, len, steep] of WAVES) {
+    const k     = 2 * Math.PI / len;
+    const omega = Math.sqrt(9.81 * k);
+    const kA    = k * amp;       // k·A  →  normal contribution scale
+
+    const phase = float(k)
+      .mul(float(dX).mul(px).add(float(dZ).mul(pz)))
+      .sub(float(omega).mul(timeU));
+
+    nx = nx.add(float(dX * kA).mul(sin(phase)));
+    ny = ny.add(float(steep * kA).mul(cos(phase)));
+    nz = nz.add(float(dZ * kA).mul(sin(phase)));
+  }
+
+  return normalize(vec3(nx.negate(), float(1.0).sub(ny), nz.negate()));
+});
+
+// Bake wave normal into a vertex-stage varying so it interpolates to fragment
+const waveNormV = varying(waveNormal(positionLocal.x, positionLocal.z));
+
+// ════════════════════════════════════════════════════════════
+//  OCEAN FRAGMENT — PHOTOREALISTIC WATER
+// ════════════════════════════════════════════════════════════
+const waterColor = Fn(() => {
+  // World-space position (uses positionNode displaced values)
+  const P  = positionWorld.xyz;
+  const N0 = normalize(waveNormV);    // low-frequency Gerstner normal
+  const t  = timeU;
+
+  // ── Fine detail normals (high-frequency ripples, per-fragment) ──────────
+  //    Three tiers: medium / fine / micro ripples travelling in different dirs
+  const TAU  = float(Math.PI * 2.0);
+
+  const uv1 = P.xz.mul(0.44).add(vec2(t.mul( 0.023), t.mul( 0.016)));
+  const uv2 = P.xz.mul(0.80).add(vec2(t.mul(-0.016), t.mul( 0.030)));
+  const uv3 = P.xz.mul(1.55).add(vec2(t.mul( 0.011), t.mul(-0.021)));
+  const uv4 = P.xz.mul(2.80).add(vec2(t.mul(-0.008), t.mul( 0.014)));
+
+  const rN1 = vec3(sin(uv1.x.mul(TAU)).mul(0.060), float(1), cos(uv1.y.mul(TAU)).mul(0.060));
+  const rN2 = vec3(sin(uv2.x.mul(TAU)).mul(0.040), float(1), cos(uv2.y.mul(TAU)).mul(0.040));
+  const rN3 = vec3(sin(uv3.x.mul(TAU)).mul(0.022), float(1), cos(uv3.y.mul(TAU)).mul(0.022));
+  const rN4 = vec3(sin(uv4.x.mul(TAU)).mul(0.010), float(1), cos(uv4.y.mul(TAU)).mul(0.010));
+
+  // Blend detail normals into the base (tangent-space addition, renormalize)
+  const N = normalize(
+    N0
+    .add(rN1.mul(float(0.32)))
+    .add(rN2.mul(float(0.22)))
+    .add(rN3.mul(float(0.13)))
+    .add(rN4.mul(float(0.07)))
+  );
+
+  // ── View direction (toward camera) ───────────────────────────────────────
+  const V   = normalize(cameraPosition.sub(P));
+  const NdV = clamp(dot(N, V), float(0.001), float(1.0));
+
+  // ── Fresnel – Schlick approximation (F0 ≈ 0.02 for water, IOR ≈ 1.33) ──
+  const F0 = float(0.02);
+  const F  = F0.add(float(1.0).sub(F0).mul(pow(float(1.0).sub(NdV), float(5.0))));
+
+  // ── Reflection color (sky looked up along reflected ray) ─────────────────
+  const R        = reflect(V.negate(), N);
+  const reflSky  = skyColor(R);
+
+  // Sun disk + halo visible in reflection
+  const rSd    = clamp(dot(R, sunDir), float(0), float(1));
+  const rDisk  = pow(rSd, float(2500.0)).mul(22.0);
+  const rHalo  = pow(rSd, float(14.0)).mul(1.5);
+  const reflSun = vec3(1.00, 0.95, 0.72).mul(rDisk)
+                  .add(vec3(1.00, 0.70, 0.36).mul(rHalo));
+  const reflCol = reflSky.add(reflSun);
+
+  // ── Water body color (transmitted/absorbed light) ────────────────────────
+  const deepC    = vec3(0.005, 0.042, 0.115);
+  const shallowC = vec3(0.022, 0.150, 0.268);
+  // Blend toward shallow near the surface (low Fresnel = looking more straight down)
+  const bodyC    = mix(deepC, shallowC, float(1.0).sub(F).mul(0.30));
+
+  // ── Subsurface forward scattering (sun shining through wave crests) ───────
+  //    Strongest when looking roughly toward the sun
+  const sssI = pow(clamp(dot(V, sunDir.negate()), float(0), float(1)), float(4.0));
+  const sssC = vec3(0.00, 0.27, 0.19)
+               .mul(sssI.mul(0.42))
+               .mul(float(1.0).sub(F));
+
+  // ── Wave crest foam ───────────────────────────────────────────────────────
+  //    Approximated from N.y: flatter normals = higher curvature = foam
+  const crest = pow(clamp(float(1.0).sub(N.y).mul(5.0), float(0), float(1)), float(2.0));
+  const foamC = vec3(0.90, 0.95, 1.00).mul(crest.mul(0.28));
+
+  // ── Specular highlight – sharp sun glint (Blinn-Phong) ───────────────────
+  const H    = normalize(V.add(sunDir));
+  const NdH  = clamp(dot(N, H), float(0), float(1));
+  const spec = pow(NdH, float(1200.0)).mul(22.0);
+  const specC = vec3(1.00, 0.96, 0.80).mul(spec);
+
+  // ── Composite ─────────────────────────────────────────────────────────────
+  //    Fresnel blends transmitted water color with reflected sky
+  const surface = mix(bodyC.add(sssC), reflCol, F)
+                  .add(specC)
+                  .add(foamC);
+
+  // ── Distance haze – blend to horizon sky color at far range ──────────────
+  const dist    = length(P.sub(cameraPosition));
+  const fogAmt  = clamp(float(1.0).sub(exp(dist.negate().mul(0.0026))), float(0), float(1));
+  const fogC    = vec3(0.76, 0.87, 0.99);
+
+  return mix(surface, fogC, fogAmt);
+});
+
+// ════════════════════════════════════════════════════════════
+//  OCEAN MESH
+// ════════════════════════════════════════════════════════════
+const oceanGeo = new THREE.PlaneGeometry(1200, 1200, 256, 256);
+oceanGeo.rotateX(-Math.PI / 2);   // lie flat in XZ plane
+
+const oceanMat = new THREE.MeshBasicNodeMaterial();
+oceanMat.positionNode = wavePosition(positionLocal.x, positionLocal.z);
+oceanMat.colorNode    = waterColor();
+
+scene.add(new THREE.Mesh(oceanGeo, oceanMat));
+
+// ════════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ════════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+
+(function animate() {
+  requestAnimationFrame(animate);
+  timeU.value = clock.getElapsedTime() * 0.55;   // gentle 55% real-time wave speed
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ════════════════════════════════════════════════════════════
+//  RESIZE
+// ════════════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
