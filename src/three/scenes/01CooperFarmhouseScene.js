@@ -1110,7 +1110,7 @@ export default {
         ambientDustSystem = createAmbientDustSystem(rng)
         sceneGroup.add(ambientDustSystem.points)
 
-        camera.position.set(12, 5.1, 30)
+        camera.position.set(-40, 5.1, -30)
         camera.lookAt(-4, 4.2, -78)
       },
 
