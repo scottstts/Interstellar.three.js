@@ -148,7 +148,6 @@ function createSaturnRingTexture() {
       let alpha = envelope * cassiniDivision * innerGap
       alpha *= THREE.MathUtils.clamp(banding + noise, 0.06, 1.1)
 
-      // Tone down the innermost dusty region and brighten the A ring slightly.
       alpha *= THREE.MathUtils.lerp(0.52, 1.0, smoothstepRange(0.12, 0.42, t))
       alpha *= THREE.MathUtils.lerp(1.0, 1.15, smoothstepRange(0.72, 0.92, t))
 
@@ -632,9 +631,13 @@ function createSaturnSystem({ ringTexture, saturnTexture }) {
   const atmosphereShellOpacity = uniform(1)
   const atmosphereFrontFaceOpacity = uniform(1)
   const atmosphereBackFaceOpacity = uniform(0.0)
+  
+  // NEW: Expose the planet center uniform so it can update with our floating origin logic
+  const atmosphereCenterWorld = uniform(new THREE.Vector3(0, 0, 0))
+
   const atmosphereMaterial = createStellarAtmosphereMaterial(
     uniform(SUN_DIRECTION.clone()),
-    uniform(new THREE.Vector3(0, 0, 0)),
+    atmosphereCenterWorld,
     uniform(SATURN_RADIUS),
     uniform(SATURN_SHELL_RADIUS),
     atmosphereShellOpacity,
@@ -656,6 +659,7 @@ function createSaturnSystem({ ringTexture, saturnTexture }) {
     group,
     rings,
     saturn,
+    atmosphereCenterWorld // NEW: Return this uniform block
   }
 }
 
@@ -834,7 +838,6 @@ export default {
     let savedCameraFov = 0
     let savedBackground = null
 
-    let pointerLockBlockHandler = null
     let movementKeyBlockHandler = null
 
     const state = {
@@ -843,7 +846,6 @@ export default {
       flybyProgress: 0.14,
       flybyDuration: 22,
       cameraBasePosition: new THREE.Vector3(),
-      cameraBaseQuaternion: new THREE.Quaternion(),
       cameraForward: new THREE.Vector3(),
       cameraRight: new THREE.Vector3(),
       cameraUp: new THREE.Vector3(),
@@ -938,36 +940,35 @@ export default {
         dockedEndurance = createDockedEndurance().docked
         sceneGroup.add(dockedEndurance)
 
+        // Calculate theoretical positions
         setShipAnchorPosition()
         dockedEndurance.position.copy(state.shipAnchorPosition)
         positionCamera(camera)
 
-        state.cameraBasePosition.copy(camera.position)
-        state.cameraBaseQuaternion.copy(camera.quaternion)
-        camera.getWorldDirection(state.cameraForward).normalize()
-        state.cameraRight.crossVectors(state.cameraForward, UP_VECTOR).normalize()
-        state.cameraUp.crossVectors(state.cameraRight, state.cameraForward).normalize()
+        // NEW: FLOATING ORIGIN SETUP
+        // Temporarily store where the camera *would* have been
+        const virtualCameraPosition = camera.position.clone()
 
-        if (document.pointerLockElement) {
-          document.exitPointerLock()
-        }
+        // 1. Camera is now exactly at the origin
+        state.cameraBasePosition.set(0, 0, 0)
+        
+        // Setup orientation vectors normally
+        state.cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize()
+        state.cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
+        state.cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize()
+        
+        // Actually move the camera to origin
+        camera.position.set(0, 0, 0)
 
-        pointerLockBlockHandler = (event) => {
-          if (event.target !== renderer.domElement) {
-            return
-          }
+        // 2. Move Saturn in the opposite direction
+        saturnSystem.group.position.copy(virtualCameraPosition).negate()
+        saturnSystem.group.updateMatrixWorld(true)
 
-          event.preventDefault()
-          event.stopPropagation()
-          if (typeof event.stopImmediatePropagation === 'function') {
-            event.stopImmediatePropagation()
-          }
+        // 3. Update the atmosphere shader uniform to know about Saturn's new center point
+        saturnSystem.atmosphereCenterWorld.value.copy(saturnSystem.group.position)
 
-          if (document.pointerLockElement) {
-            document.exitPointerLock()
-          }
-        }
-        renderer.domElement.addEventListener('click', pointerLockBlockHandler, true)
+        // 4. Since stars represent an infinite background, they can just be attached at the camera's true position (the origin)
+        stars.position.set(0, 0, 0)
 
         movementKeyBlockHandler = (event) => {
           if (!MOVEMENT_KEY_CODES.has(event.code)) {
@@ -991,32 +992,30 @@ export default {
         state.flybyProgress = (state.flybyProgress + delta / state.flybyDuration) % 1
 
         camera.position.copy(state.cameraBasePosition)
-        camera.quaternion.copy(state.cameraBaseQuaternion)
+        state.cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize()
+        state.cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
+        state.cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize()
 
         const flybyT = state.flybyProgress * 2 - 1
         const lateralOffset = flybyT * metersToWorld(1700)
-        const verticalOffset = metersToWorld(-120)
-        const forwardOffset = metersToWorld(1000)
+        const verticalOffset = metersToWorld(-40)
+        const forwardOffset = metersToWorld(500)
 
         dockedEndurance.position.copy(state.cameraBasePosition)
         dockedEndurance.position.addScaledVector(state.cameraForward, forwardOffset)
         dockedEndurance.position.addScaledVector(state.cameraRight, lateralOffset)
         dockedEndurance.position.addScaledVector(state.cameraUp, verticalOffset)
 
-        dockedEndurance.rotation.z += delta * state.shipSpinRate
+        dockedEndurance.rotation.z += delta * state.shipSpinRate * 5
         dockedEndurance.rotation.y += delta * state.shipSpinRate * 0.25
 
+        // Keep stars tethered to camera to prevent parallax on deep space
         stars.position.copy(camera.position)
       },
 
       resize() {},
 
-      dispose({ camera, renderer, scene }) {
-        if (pointerLockBlockHandler && renderer?.domElement) {
-          renderer.domElement.removeEventListener('click', pointerLockBlockHandler, true)
-          pointerLockBlockHandler = null
-        }
-
+      dispose({ camera, scene }) {
         if (movementKeyBlockHandler) {
           window.removeEventListener('keydown', movementKeyBlockHandler, true)
           movementKeyBlockHandler = null
