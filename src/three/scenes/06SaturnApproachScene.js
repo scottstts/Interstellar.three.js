@@ -992,9 +992,6 @@ export default {
         state.flybyProgress = (state.flybyProgress + delta / state.flybyDuration) % 1
 
         camera.position.copy(state.cameraBasePosition)
-        state.cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize()
-        state.cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
-        state.cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize()
 
         const flybyT = state.flybyProgress * 2 - 1
         const lateralOffset = flybyT * metersToWorld(1700)
