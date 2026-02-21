@@ -68,7 +68,7 @@ function createGroundTexture(rng) {
     context.globalAlpha = 1
   })
 
-  texture.repeat.set(20, 20)
+  texture.repeat.set(86, 86)
   return texture
 }
 
@@ -206,7 +206,7 @@ function createTerrain(rng) {
   const groundTexture = createGroundTexture(rng)
   const roadTexture = createRoadTexture(rng)
 
-  const groundGeometry = new THREE.PlaneGeometry(420, 420, 150, 150)
+  const groundGeometry = new THREE.PlaneGeometry(1800, 1800, 220, 220)
   groundGeometry.rotateX(-Math.PI / 2)
   const groundPositions = groundGeometry.attributes.position
 
@@ -214,11 +214,13 @@ function createTerrain(rng) {
     const x = groundPositions.getX(i)
     const z = groundPositions.getZ(i)
     const roadCenter = Math.sin(z * 0.055) * 1.55
-    const roadCut = Math.exp(-Math.pow((x - roadCenter) / 8.1, 2)) * 0.34
+    const roadReach = Math.max(0, 1 - Math.abs(z + 84) / 290)
+    const roadCut = Math.exp(-Math.pow((x - roadCenter) / 8.1, 2)) * 0.34 * roadReach
     const rolling = Math.sin((x + 28) * 0.024) * 0.68 + Math.cos((z - 36) * 0.019) * 0.54
+    const macro = Math.sin((x - 170) * 0.0048) * 0.34 + Math.cos((z + 120) * 0.0052) * 0.32
     const furrows = Math.sin((x * 0.9 + z * 0.24) * 0.14) * 0.1
     const noise = (rng() - 0.5) * 0.1
-    groundPositions.setY(i, rolling + furrows + noise - roadCut - 0.45)
+    groundPositions.setY(i, rolling + macro + furrows + noise - roadCut - 0.45)
   }
 
   groundPositions.needsUpdate = true
@@ -292,27 +294,6 @@ function createTerrain(rng) {
     group.add(shoulder)
   }
 
-  const horizonLine = new THREE.Group()
-  const horizonMaterial = new THREE.MeshStandardMaterial({
-    color: 0x50473b,
-    metalness: 0,
-    roughness: 1,
-  })
-  const horizonGeometry = new THREE.CylinderGeometry(0.8, 2.9, 9.2, 7)
-
-  for (let i = 0; i < 164; i += 1) {
-    const tree = new THREE.Mesh(horizonGeometry, horizonMaterial)
-    const angle = (i / 164) * TAU
-    const radiusX = 182 + (rng() - 0.5) * 24
-    const radiusZ = 154 + (rng() - 0.5) * 18
-    tree.position.set(Math.cos(angle) * radiusX, 4.5 + rng() * 2.6, -36 + Math.sin(angle) * radiusZ)
-    tree.rotation.y = rng() * TAU
-    tree.scale.x = 0.75 + rng() * 0.75
-    tree.scale.z = 0.75 + rng() * 0.75
-    horizonLine.add(tree)
-  }
-
-  group.add(horizonLine)
   return group
 }
 
@@ -452,17 +433,17 @@ function createFarmstead(rng) {
   farmstead.add(secondFloor)
 
   const roofLeft = new THREE.Mesh(new THREE.BoxGeometry(7, 0.34, 10.4), roofMaterial)
-  roofLeft.position.set(-1.85, 8.7, 0)
+  roofLeft.position.set(-3, 8.7, 0)
   roofLeft.rotation.z = 0.62
   farmstead.add(roofLeft)
 
   const roofRight = new THREE.Mesh(new THREE.BoxGeometry(7, 0.34, 10.4), roofMaterial)
-  roofRight.position.set(1.85, 8.7, 0)
+  roofRight.position.set(2.5, 8.7, 0)
   roofRight.rotation.z = -0.62
   farmstead.add(roofRight)
 
   const roofRidge = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.3, 10.1), trimMaterial)
-  roofRidge.position.set(0, 9.98, 0)
+  roofRidge.position.set(-0.25, 10.4, 0)
   farmstead.add(roofRidge)
 
   for (const side of [-1, 1]) {
@@ -572,12 +553,12 @@ function createFarmstead(rng) {
   barn.add(barnWalls)
 
   const barnRoofLeft = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.35, 11.2), roofMaterial)
-  barnRoofLeft.position.set(-1.7, 7.9, 0)
+  barnRoofLeft.position.set(-2.7, 8.3, 0)
   barnRoofLeft.rotation.z = 0.58
   barn.add(barnRoofLeft)
 
   const barnRoofRight = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.35, 11.2), roofMaterial)
-  barnRoofRight.position.set(1.7, 7.9, 0)
+  barnRoofRight.position.set(2.6, 8.3, 0)
   barnRoofRight.rotation.z = -0.58
   barn.add(barnRoofRight)
 
@@ -654,25 +635,55 @@ function createFarmstead(rng) {
   return farmstead
 }
 
-function createCornfieldSystem(rng) {
+function createCornfieldSystem(rng, initialCamera = null) {
   const group = new THREE.Group()
 
   const plants = []
-  for (let z = 18; z >= -212; z -= 3.8) {
-    const rowOffset = Math.round(Math.abs(z) * 2.4) % 2 === 0 ? 0 : 1.5
-    for (let x = -104; x <= 104; x += 3.15) {
-      const jitterX = (rng() - 0.5) * 0.9 + rowOffset
-      const jitterZ = (rng() - 0.5) * 0.8
+  const cornDensityMultiplier = 2
+  const spacingScale = 1 / Math.sqrt(cornDensityMultiplier)
+  const fieldExtent = 520
+  const maxCornRadius = 560
+
+  for (let z = fieldExtent; z >= -fieldExtent; ) {
+    const zRatio = Math.min(1, Math.abs(z) / fieldExtent)
+    const rowStep = (3.5 + zRatio * 3.1) * spacingScale
+    const rowOffset = Math.round(Math.abs(z) * 1.2) % 2 === 0 ? 0 : 1
+
+    for (let x = -fieldExtent; x <= fieldExtent; ) {
+      const radial = Math.min(1, Math.hypot(x, z) / fieldExtent)
+      const colStep = (2.9 + radial * 3.6) * spacingScale
+      const jitterX = (rng() - 0.5) * (0.62 + radial * 1.25) + rowOffset
+      const jitterZ = (rng() - 0.5) * (0.52 + radial * 1.05)
       const plantX = x + jitterX
       const plantZ = z + jitterZ
+      if (Math.hypot(plantX, plantZ) > maxCornRadius) {
+        x += colStep
+        continue
+      }
+
+      const frontGroundSector = plantZ > 86 && Math.abs(plantX) < 330
+      if (frontGroundSector) {
+        x += colStep
+        continue
+      }
+
       const roadCenter = Math.sin(plantZ * 0.055) * 1.55
-      const roadClearance = 8 + Math.max(0, 6.5 - Math.abs(plantZ + 72) * 0.045)
-      if (Math.abs(plantX - roadCenter) < roadClearance) {
+      const roadReach = Math.max(0, 1 - Math.abs(plantZ + 84) / 290)
+      const roadClearance = (7 + Math.max(0, 5.2 - Math.abs(plantZ + 72) * 0.036)) * roadReach
+      if (roadReach > 0.001 && Math.abs(plantX - roadCenter) < roadClearance) {
+        x += colStep
         continue
       }
 
       const inYardZone = plantX > -40 && plantX < 44 && plantZ > -95 && plantZ < -40
       if (inYardZone) {
+        x += colStep
+        continue
+      }
+
+      const keepChance = 1 - radial * 0.68
+      if (rng() > keepChance) {
+        x += colStep
         continue
       }
 
@@ -685,10 +696,28 @@ function createCornfieldSystem(rng) {
         yaw: rng() * TAU,
         z: plantZ,
       })
+
+      x += colStep
     }
+
+    z -= rowStep
   }
 
-  const count = plants.length
+  const chunkSize = 104
+  const chunkMap = new Map()
+
+  for (const plant of plants) {
+    const chunkX = Math.floor(plant.x / chunkSize)
+    const chunkZ = Math.floor(plant.z / chunkSize)
+    const key = `${chunkX}|${chunkZ}`
+
+    if (!chunkMap.has(key)) {
+      chunkMap.set(key, [])
+    }
+
+    chunkMap.get(key).push(plant)
+  }
+
   const stalkGeometry = new THREE.CylinderGeometry(0.03, 0.06, 2.2, 7)
   stalkGeometry.translate(0, 1.1, 0)
   const leafUpperGeometry = new THREE.BoxGeometry(1.05, 0.05, 0.14)
@@ -719,47 +748,143 @@ function createCornfieldSystem(rng) {
     vertexColors: true,
   })
 
-  const stalks = new THREE.InstancedMesh(stalkGeometry, stalkMaterial, count)
-  const leafUpper = new THREE.InstancedMesh(leafUpperGeometry, leafMaterial, count)
-  const leafLower = new THREE.InstancedMesh(leafLowerGeometry, leafMaterial, count)
-  const tassels = new THREE.InstancedMesh(tasselGeometry, tasselMaterial, count)
-
+  const chunks = []
   const stalkColor = new THREE.Color()
   const leafColor = new THREE.Color()
   const tasselColor = new THREE.Color()
 
-  for (let i = 0; i < count; i += 1) {
-    stalkColor.setHSL(0.17 + rng() * 0.05, 0.44, 0.34 + rng() * 0.11)
-    leafColor.copy(stalkColor).offsetHSL(-0.01, 0.06, 0.04)
-    tasselColor.copy(stalkColor).offsetHSL(-0.03, -0.1, 0.2)
-    stalks.setColorAt(i, stalkColor)
-    leafUpper.setColorAt(i, leafColor)
-    leafLower.setColorAt(i, leafColor)
-    tassels.setColorAt(i, tasselColor)
-  }
+  for (const chunkPlantsRaw of chunkMap.values()) {
+    let roughCenterX = 0
+    let roughCenterZ = 0
+    for (const plant of chunkPlantsRaw) {
+      roughCenterX += plant.x
+      roughCenterZ += plant.z
+    }
+    roughCenterX /= chunkPlantsRaw.length
+    roughCenterZ /= chunkPlantsRaw.length
 
-  if (stalks.instanceColor) {
-    stalks.instanceColor.needsUpdate = true
-  }
-  if (leafUpper.instanceColor) {
-    leafUpper.instanceColor.needsUpdate = true
-  }
-  if (leafLower.instanceColor) {
-    leafLower.instanceColor.needsUpdate = true
-  }
-  if (tassels.instanceColor) {
-    tassels.instanceColor.needsUpdate = true
-  }
+    const radialDistance = Math.hypot(roughCenterX, roughCenterZ)
+    let lodStride = 1
+    if (radialDistance > 470) {
+      lodStride = 5
+    } else if (radialDistance > 390) {
+      lodStride = 4
+    } else if (radialDistance > 310) {
+      lodStride = 3
+    } else if (radialDistance > 230) {
+      lodStride = 2
+    }
 
-  group.add(stalks, leafUpper, leafLower, tassels)
+    const chunkPlants =
+      lodStride === 1 ? chunkPlantsRaw : chunkPlantsRaw.filter((_, index) => index % lodStride === 0)
+    const count = chunkPlants.length
+    if (count === 0) {
+      continue
+    }
 
-  const update = (elapsed) => {
-    const primaryWind = Math.sin(elapsed * 0.42) * 0.78
-    const secondaryWind = Math.sin(elapsed * 1.06 + 0.6) * 0.34
-    const tertiaryWind = Math.sin(elapsed * 0.19 + 1.7) * 0.22
+    const useLeaves = radialDistance < 320
+    const useTassels = radialDistance < 240
+    const chunkGroup = new THREE.Group()
+
+    const stalks = new THREE.InstancedMesh(stalkGeometry, stalkMaterial, count)
+    const leafUpper = useLeaves ? new THREE.InstancedMesh(leafUpperGeometry, leafMaterial, count) : null
+    const leafLower = useLeaves ? new THREE.InstancedMesh(leafLowerGeometry, leafMaterial, count) : null
+    const tassels = useTassels ? new THREE.InstancedMesh(tasselGeometry, tasselMaterial, count) : null
+
+    stalks.frustumCulled = false
+    if (leafUpper) {
+      leafUpper.frustumCulled = false
+    }
+    if (leafLower) {
+      leafLower.frustumCulled = false
+    }
+    if (tassels) {
+      tassels.frustumCulled = false
+    }
+
+    let centerX = 0
+    let centerZ = 0
 
     for (let i = 0; i < count; i += 1) {
-      const plant = plants[i]
+      const plant = chunkPlants[i]
+      centerX += plant.x
+      centerZ += plant.z
+
+      stalkColor.setHSL(0.17 + rng() * 0.05, 0.44, 0.34 + rng() * 0.11)
+      leafColor.copy(stalkColor).offsetHSL(-0.01, 0.06, 0.04)
+      tasselColor.copy(stalkColor).offsetHSL(-0.03, -0.1, 0.2)
+      stalks.setColorAt(i, stalkColor)
+      if (leafUpper) {
+        leafUpper.setColorAt(i, leafColor)
+      }
+      if (leafLower) {
+        leafLower.setColorAt(i, leafColor)
+      }
+      if (tassels) {
+        tassels.setColorAt(i, tasselColor)
+      }
+    }
+
+    if (stalks.instanceColor) {
+      stalks.instanceColor.needsUpdate = true
+    }
+    if (leafUpper && leafUpper.instanceColor) {
+      leafUpper.instanceColor.needsUpdate = true
+    }
+    if (leafLower && leafLower.instanceColor) {
+      leafLower.instanceColor.needsUpdate = true
+    }
+    if (tassels && tassels.instanceColor) {
+      tassels.instanceColor.needsUpdate = true
+    }
+
+    centerX /= count
+    centerZ /= count
+    const center = new THREE.Vector3(centerX, 2.2, centerZ)
+
+    let radius = 16
+    for (let i = 0; i < count; i += 1) {
+      const plant = chunkPlants[i]
+      const dx = plant.x - center.x
+      const dz = plant.z - center.z
+      radius = Math.max(radius, Math.hypot(dx, dz) + 4.5)
+    }
+
+    chunkGroup.add(stalks)
+    if (leafUpper) {
+      chunkGroup.add(leafUpper)
+    }
+    if (leafLower) {
+      chunkGroup.add(leafLower)
+    }
+    if (tassels) {
+      chunkGroup.add(tassels)
+    }
+    group.add(chunkGroup)
+
+    chunks.push({
+      bounds: new THREE.Sphere(center.clone(), radius),
+      center,
+      group: chunkGroup,
+      leafLower,
+      leafUpper,
+      lodStride,
+      plants: chunkPlants,
+      stalks,
+      tassels,
+    })
+  }
+
+  const cullingFrustum = new THREE.Frustum()
+  const cullingMatrix = new THREE.Matrix4()
+  const maxVisibleDistanceSq = 330 * 330
+  const fullDetailDistanceSq = 190 * 190
+  let frameCounter = 0
+
+  const updateChunk = (chunk, elapsed, primaryWind, secondaryWind, tertiaryWind) => {
+    const count = chunk.plants.length
+    for (let i = 0; i < count; i += 1) {
+      const plant = chunk.plants[i]
       const gust = Math.sin(elapsed * 1.9 + plant.phase + plant.z * 0.04 + plant.x * 0.03) * 0.36
       const bend = (primaryWind + secondaryWind + tertiaryWind + gust) * plant.amp
 
@@ -768,19 +893,71 @@ function createCornfieldSystem(rng) {
       INSTANCE_DUMMY.scale.set(1, plant.height, 1)
       INSTANCE_DUMMY.updateMatrix()
 
-      stalks.setMatrixAt(i, INSTANCE_DUMMY.matrix)
-      leafUpper.setMatrixAt(i, INSTANCE_DUMMY.matrix)
-      leafLower.setMatrixAt(i, INSTANCE_DUMMY.matrix)
-      tassels.setMatrixAt(i, INSTANCE_DUMMY.matrix)
+      chunk.stalks.setMatrixAt(i, INSTANCE_DUMMY.matrix)
+      if (chunk.leafUpper) {
+        chunk.leafUpper.setMatrixAt(i, INSTANCE_DUMMY.matrix)
+      }
+      if (chunk.leafLower) {
+        chunk.leafLower.setMatrixAt(i, INSTANCE_DUMMY.matrix)
+      }
+      if (chunk.tassels) {
+        chunk.tassels.setMatrixAt(i, INSTANCE_DUMMY.matrix)
+      }
     }
 
-    stalks.instanceMatrix.needsUpdate = true
-    leafUpper.instanceMatrix.needsUpdate = true
-    leafLower.instanceMatrix.needsUpdate = true
-    tassels.instanceMatrix.needsUpdate = true
+    chunk.stalks.instanceMatrix.needsUpdate = true
+    if (chunk.leafUpper) {
+      chunk.leafUpper.instanceMatrix.needsUpdate = true
+    }
+    if (chunk.leafLower) {
+      chunk.leafLower.instanceMatrix.needsUpdate = true
+    }
+    if (chunk.tassels) {
+      chunk.tassels.instanceMatrix.needsUpdate = true
+    }
   }
 
-  update(0)
+  const update = (elapsed, camera) => {
+    const primaryWind = Math.sin(elapsed * 0.42) * 0.78
+    const secondaryWind = Math.sin(elapsed * 1.06 + 0.6) * 0.34
+    const tertiaryWind = Math.sin(elapsed * 0.19 + 1.7) * 0.22
+
+    const shouldRecomputeCulling = Boolean(camera && frameCounter % 4 === 0)
+    frameCounter += 1
+
+    if (shouldRecomputeCulling && camera) {
+      cullingMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      cullingFrustum.setFromProjectionMatrix(cullingMatrix)
+    }
+
+    for (const chunk of chunks) {
+      if (shouldRecomputeCulling && camera) {
+        const dx = chunk.center.x - camera.position.x
+        const dz = chunk.center.z - camera.position.z
+        const distanceSq = dx * dx + dz * dz
+        const withinDistance = distanceSq <= maxVisibleDistanceSq
+        const keepFullDetail = distanceSq <= fullDetailDistanceSq
+        chunk.group.visible = withinDistance && cullingFrustum.intersectsSphere(chunk.bounds)
+        if (chunk.leafUpper) {
+          chunk.leafUpper.visible = keepFullDetail
+        }
+        if (chunk.leafLower) {
+          chunk.leafLower.visible = keepFullDetail
+        }
+        if (chunk.tassels) {
+          chunk.tassels.visible = keepFullDetail
+        }
+      }
+
+      if (!chunk.group.visible) {
+        continue
+      }
+
+      updateChunk(chunk, elapsed, primaryWind, secondaryWind, tertiaryWind)
+    }
+  }
+
+  update(0, initialCamera)
   return { group, update }
 }
 
@@ -1101,7 +1278,7 @@ export default {
         sceneGroup.add(createUtilityPoles())
         sceneGroup.add(createFarmstead(rng))
 
-        cornfieldSystem = createCornfieldSystem(rng)
+        cornfieldSystem = createCornfieldSystem(rng, camera)
         sceneGroup.add(cornfieldSystem.group)
 
         truckSystem = createTruckSystem(rng)
@@ -1114,13 +1291,13 @@ export default {
         camera.lookAt(-4, 4.2, -78)
       },
 
-      update({ delta, elapsed }) {
+      update({ delta, elapsed, camera }) {
         if (!sceneGroup) {
           return
         }
 
         if (cornfieldSystem) {
-          cornfieldSystem.update(elapsed)
+          cornfieldSystem.update(elapsed, camera)
         }
 
         if (truckSystem) {
