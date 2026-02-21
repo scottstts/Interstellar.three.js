@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu'
 import {
   abs,
   cameraPosition,
+  color,
   dot,
   exp,
   Fn,
@@ -13,11 +14,13 @@ import {
   mix,
   min,
   normalize,
+  normalLocal,
   positionWorld,
   pow,
   smoothstep,
   sqrt,
   step,
+  texture,
   uniform,
   vec2,
   vec3,
@@ -38,8 +41,6 @@ const SATURN_RING_INNER_RADIUS_KM = 70000
 const SATURN_RING_OUTER_RADIUS_KM = 140000
 const SATURN_RING_INNER_RADIUS = SATURN_RING_INNER_RADIUS_KM * WORLD_UNITS_PER_KM
 const SATURN_RING_OUTER_RADIUS = SATURN_RING_OUTER_RADIUS_KM * WORLD_UNITS_PER_KM
-
-const ENDURANCE_MODEL_SCALE_METERS = 1.35
 
 const SPACE_COLOR = new THREE.Color(0x02040a)
 const STAR_COLOR = new THREE.Color(0xffffff)
@@ -68,7 +69,6 @@ const TMP_VEC3_A = new THREE.Vector3()
 const TMP_VEC3_B = new THREE.Vector3()
 const TMP_VEC3_C = new THREE.Vector3()
 const TMP_VEC3_D = new THREE.Vector3()
-const TMP_QUAT_A = new THREE.Quaternion()
 const ORIGIN = new THREE.Vector3(0, 0, 0)
 const UP_VECTOR = new THREE.Vector3(0, 1, 0)
 
@@ -586,12 +586,13 @@ function createSaturnSystem({ ringTexture, saturnTexture }) {
   const group = new THREE.Group()
   group.name = 'scene06-saturn-system'
 
-  const saturnMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    map: saturnTexture,
+  const saturnMaterial = new THREE.MeshStandardNodeMaterial({
     metalness: 0.0,
     roughness: 0.98,
   })
+  const saturnTextureNode = texture(saturnTexture)
+  const poleMask = smoothstep(0.9, 0.975, abs(normalLocal.y))
+  saturnMaterial.colorNode = mix(saturnTextureNode.rgb, color(0xc9bea9), poleMask)
 
   const saturn = new THREE.Mesh(new THREE.SphereGeometry(SATURN_RADIUS, 168, 112), saturnMaterial)
   saturn.name = 'scene06-saturn'
@@ -658,264 +659,162 @@ function createSaturnSystem({ ringTexture, saturnTexture }) {
   }
 }
 
-function createEndurance() {
-  const group = new THREE.Group()
-  group.name = 'scene06-endurance'
-
-  const hullWhite = new THREE.MeshStandardMaterial({
-    color: 0xdfe5ec,
-    metalness: 0.68,
-    roughness: 0.34,
-  })
-  const hullDark = new THREE.MeshStandardMaterial({
-    color: 0x4f5967,
-    metalness: 0.54,
-    roughness: 0.42,
-  })
-  const blackPanel = new THREE.MeshStandardMaterial({
-    color: 0x1e2430,
-    metalness: 0.3,
-    roughness: 0.56,
-  })
-  const materials = [hullWhite, hullDark, blackPanel]
-  const baseColors = materials.map((material) => material.color.clone())
-
-  for (const material of materials) {
-    material.transparent = true
-    material.opacity = 1
-  }
-
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 18, 24), hullDark)
-  hub.rotation.z = Math.PI / 2
-  group.add(hub)
-
-  const spindle = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 36, 16), hullWhite)
-  spindle.rotation.x = Math.PI / 2
-  group.add(spindle)
-
-  const ringRadius = 27
-  const moduleCount = 12
-  for (let i = 0; i < moduleCount; i += 1) {
-    const angle = (i / moduleCount) * Math.PI * 2
-    const modulePivot = new THREE.Group()
-    modulePivot.position.set(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, 0)
-    modulePivot.rotation.z = angle + Math.PI / 2
-
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(13, 7.2, 3.2), hullWhite)
-    frame.castShadow = true
-    modulePivot.add(frame)
-
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(10.5, 4.2, 1.1), blackPanel)
-    panel.position.z = 2.05
-    modulePivot.add(panel)
-
-    const rear = new THREE.Mesh(new THREE.BoxGeometry(4.4, 5.4, 2.2), hullDark)
-    rear.position.x = -5.2
-    modulePivot.add(rear)
-
-    group.add(modulePivot)
-
-    const truss = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, ringRadius - 4.8, 8), hullDark)
-    truss.position.set(Math.cos(angle) * (ringRadius * 0.5), Math.sin(angle) * (ringRadius * 0.5), 0)
-    truss.rotation.z = angle + Math.PI / 2
-    group.add(truss)
-  }
-
-  const dockingRing = new THREE.Mesh(new THREE.TorusGeometry(6.5, 0.7, 12, 32), hullWhite)
-  dockingRing.position.set(0, 0, -9.5)
-  dockingRing.rotation.x = Math.PI / 2
-  group.add(dockingRing)
-
-  const dockNode = new THREE.Object3D()
-  dockNode.name = 'scene06-endurance-dock-node'
-  dockNode.position.copy(dockingRing.position)
-  group.add(dockNode)
-
-  group.scale.setScalar(WORLD_UNITS_PER_METER * ENDURANCE_MODEL_SCALE_METERS)
-  return {
-    baseColors,
-    dockNode,
-    group,
-    materials,
-  }
-}
-
-function createRanger() {
-  const group = new THREE.Group()
-  group.name = 'scene06-ranger'
-
-  const hull = new THREE.MeshStandardMaterial({
-    color: 0xf1f4f8,
-    metalness: 0.22,
-    roughness: 0.5,
-  })
-  const frame = new THREE.MeshStandardMaterial({
-    color: 0x2f3541,
-    metalness: 0.38,
-    roughness: 0.42,
-  })
-  const alloy = new THREE.MeshStandardMaterial({
-    color: 0x9ca3af,
-    metalness: 0.74,
-    roughness: 0.28,
-  })
-
-  const glass = new THREE.MeshStandardMaterial({
-    color: 0x243249,
-    metalness: 0.35,
-    roughness: 0.18,
-    transparent: true,
-    opacity: 0.82,
-  })
-  glass.depthWrite = false
-  glass.polygonOffset = true
-  glass.polygonOffsetFactor = -2
-  glass.polygonOffsetUnits = -2
-
-  const bodyOutline = [
-    new THREE.Vector2(0.0, 5.0),
-    new THREE.Vector2(0.65, 4.25),
-    new THREE.Vector2(2.3, 2.85),
-    new THREE.Vector2(3.7, -0.6),
-    new THREE.Vector2(3.1, -2.3),
-    new THREE.Vector2(1.55, -5.05),
-    new THREE.Vector2(0.7, -4.55),
-    new THREE.Vector2(0.0, -4.2),
-    new THREE.Vector2(-0.7, -4.55),
-    new THREE.Vector2(-1.55, -5.05),
-    new THREE.Vector2(-3.1, -2.3),
-    new THREE.Vector2(-3.7, -0.6),
-    new THREE.Vector2(-2.3, 2.85),
-    new THREE.Vector2(-0.65, 4.25),
-  ]
-
-  const bodyThickness = 0.58
-  const bodyShape = new THREE.Shape(bodyOutline)
-  const bodyGeometry = new THREE.ExtrudeGeometry(bodyShape, {
-    depth: bodyThickness,
-    bevelEnabled: false,
-  })
-  bodyGeometry.translate(0, 0, -bodyThickness * 0.5)
-
-  const body = new THREE.Mesh(bodyGeometry, hull)
-  body.castShadow = true
-  group.add(body)
-
-  const outerOutline = bodyOutline.map((p) => new THREE.Vector2(p.x * 1.07, p.y * 1.03))
-  const innerOutline = bodyOutline.map((p) => new THREE.Vector2(p.x * 0.91, p.y * 0.95))
-  const frameShape = new THREE.Shape(outerOutline)
-  frameShape.holes.push(new THREE.Path(innerOutline))
-
-  const frameDepth = 0.1
-  const frameGap = 0.05
-  const frameGeometry = new THREE.ExtrudeGeometry(frameShape, {
-    depth: frameDepth,
-    bevelEnabled: false,
-  })
-  frameGeometry.translate(0, 0, -frameDepth * 0.5)
-
-  const frameTopZ = bodyThickness * 0.5 + frameDepth * 0.5 + frameGap
-  const outerFrameTop = new THREE.Mesh(frameGeometry, frame)
-  outerFrameTop.position.z = frameTopZ
-  outerFrameTop.castShadow = true
-  group.add(outerFrameTop)
-
-  const outerFrameBottom = new THREE.Mesh(frameGeometry, frame)
-  outerFrameBottom.position.z = -frameTopZ
-  outerFrameBottom.castShadow = true
-  group.add(outerFrameBottom)
-
-  const cockpitOutline = [
-    new THREE.Vector2(0.0, 3.85),
-    new THREE.Vector2(0.95, 3.3),
-    new THREE.Vector2(1.2, 2.05),
-    new THREE.Vector2(0.75, 0.85),
-    new THREE.Vector2(0.0, 0.5),
-    new THREE.Vector2(-0.75, 0.85),
-    new THREE.Vector2(-1.2, 2.05),
-    new THREE.Vector2(-0.95, 3.3),
-  ]
-  const cockpitThickness = 0.22
-  const cockpitShape = new THREE.Shape(cockpitOutline)
-  const cockpitGeometry = new THREE.ExtrudeGeometry(cockpitShape, {
-    depth: cockpitThickness,
-    bevelEnabled: false,
-  })
-  cockpitGeometry.translate(0, 0, -cockpitThickness * 0.5)
-  const cockpitHump = new THREE.Mesh(cockpitGeometry, hull)
-  cockpitHump.position.set(0, 0.2, bodyThickness * 0.5 + cockpitThickness * 0.5 + 0.05)
-  cockpitHump.castShadow = true
-  group.add(cockpitHump)
-
-  const canopyZ = bodyThickness * 0.5 + cockpitThickness + 0.11
-  const canopyOutline = [
-    new THREE.Vector2(0.0, 1.45),
-    new THREE.Vector2(0.95, 1.12),
-    new THREE.Vector2(1.25, 0.25),
-    new THREE.Vector2(1.02, -0.9),
-    new THREE.Vector2(0.0, -1.25),
-    new THREE.Vector2(-1.02, -0.9),
-    new THREE.Vector2(-1.25, 0.25),
-    new THREE.Vector2(-0.95, 1.12),
-  ]
-  const canopyShape = new THREE.Shape(canopyOutline)
-  const canopyGeometry = new THREE.ShapeGeometry(canopyShape, 8)
-  const canopy = new THREE.Mesh(canopyGeometry, glass)
-  canopy.position.set(0, 2.35, canopyZ)
-  canopy.renderOrder = 20
-  group.add(canopy)
-
-  const wingSparLeft = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.9, 0.22), frame)
-  wingSparLeft.position.set(2.8, -0.8, frameTopZ + frameDepth * 0.5 + 0.11 + 0.03)
-  wingSparLeft.rotation.z = THREE.MathUtils.degToRad(-14)
-  group.add(wingSparLeft)
-
-  const wingSparRight = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.9, 0.22), frame)
-  wingSparRight.position.set(-2.8, -0.8, frameTopZ + frameDepth * 0.5 + 0.11 + 0.03)
-  wingSparRight.rotation.z = THREE.MathUtils.degToRad(14)
-  group.add(wingSparRight)
-
-  const aftBlock = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.35, 0.6), frame)
-  aftBlock.position.set(0, -4.25, -(bodyThickness * 0.5 + 0.3 + 0.14))
-  group.add(aftBlock)
-
-  const enginePodLeft = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.9, 0.45), alloy)
-  enginePodLeft.position.set(0.65, -4.95, -(bodyThickness * 0.5 + 0.225 + 0.16))
-  group.add(enginePodLeft)
-
-  const enginePodRight = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.9, 0.45), alloy)
-  enginePodRight.position.set(-0.65, -4.95, -(bodyThickness * 0.5 + 0.225 + 0.16))
-  group.add(enginePodRight)
-
-  group.scale.setScalar(WORLD_UNITS_PER_METER)
-  return { group }
+function createMetalMat(hexColor, roughness, metalness) {
+  const material = new THREE.MeshStandardNodeMaterial()
+  material.colorNode = color(hexColor)
+  material.roughnessNode = float(roughness)
+  material.metalnessNode = float(metalness)
+  return material
 }
 
 function createDockedEndurance() {
   const docked = new THREE.Group()
   docked.name = 'scene06-docked-endurance'
 
-  const endurance = createEndurance()
-  const ranger = createRanger()
+  const endurance = new THREE.Group()
+  endurance.name = 'scene06-endurance'
 
-  docked.add(endurance.group)
-  docked.add(ranger.group)
+  const matWhiteHull = createMetalMat(0xdddddd, 0.4, 0.6)
+  const matDarkHull = createMetalMat(0x333333, 0.5, 0.7)
+  const matSolarPanel = createMetalMat(0x111111, 0.15, 0.9)
+  const matGlossBlack = createMetalMat(0x050505, 0.05, 0.8)
 
-  endurance.group.updateMatrixWorld(true)
-  endurance.dockNode.getWorldPosition(TMP_VEC3_A)
-  docked.worldToLocal(TMP_VEC3_A)
+  const RING_RADIUS = 32
+  const NUM_MODULES = 12
 
-  ranger.group.position.copy(TMP_VEC3_A)
-  ranger.group.rotation.x = Math.PI / 2
-  ranger.group.position.z -= 0.006
+  for (let i = 0; i < NUM_MODULES; i += 1) {
+    const angle = (i / NUM_MODULES) * Math.PI * 2
+    const modGroup = new THREE.Group()
+
+    const baseGeo = new THREE.BoxGeometry(8, 7, 10)
+    const base = new THREE.Mesh(baseGeo, matWhiteHull)
+    base.castShadow = true
+    base.receiveShadow = true
+    modGroup.add(base)
+
+    const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel)
+    innerPanel.position.set(0, 0, -4.6)
+    innerPanel.castShadow = true
+    innerPanel.receiveShadow = true
+    modGroup.add(innerPanel)
+
+    const sideDetail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 4), matDarkHull)
+    sideDetail.position.set(0, 0, 1)
+    modGroup.add(sideDetail)
+
+    modGroup.position.set(Math.cos(angle) * RING_RADIUS, Math.sin(angle) * RING_RADIUS, 0)
+    modGroup.rotation.z = angle + Math.PI / 2
+    modGroup.lookAt(0, 0, 0)
+    endurance.add(modGroup)
+
+    const jointAngle = angle + (Math.PI / NUM_MODULES)
+    const jointGroup = new THREE.Group()
+    jointGroup.position.set(Math.cos(jointAngle) * RING_RADIUS, Math.sin(jointAngle) * RING_RADIUS, 0)
+    jointGroup.rotation.z = jointAngle
+
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 9, 32), matWhiteHull)
+    tube.castShadow = true
+    tube.receiveShadow = true
+    jointGroup.add(tube)
+
+    const jointCenter = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 2.5, 32), matWhiteHull)
+    jointGroup.add(jointCenter)
+
+    const portGeo = new THREE.CylinderGeometry(1.2, 1.2, 3.5, 32)
+    const port = new THREE.Mesh(portGeo, matGlossBlack)
+    port.rotation.z = Math.PI / 2
+    jointGroup.add(port)
+
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32), matDarkHull)
+    rim.rotation.z = Math.PI / 2
+    jointGroup.add(rim)
+
+    endurance.add(jointGroup)
+  }
+
+  const poleLength = RING_RADIUS - 5
+  const poleGroup = new THREE.Group()
+  poleGroup.position.set(0, poleLength / 2 + 2, 0)
+
+  const poleCore = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, poleLength, 32), matWhiteHull)
+  poleCore.castShadow = true
+  poleCore.receiveShadow = true
+  poleGroup.add(poleCore)
+
+  for (let i = -1; i <= 1; i += 1) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 2, 32), matDarkHull)
+    ring.position.y = i * (poleLength / 3)
+    poleGroup.add(ring)
+  }
+  endurance.add(poleGroup)
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3, 32), matWhiteHull)
+  hub.rotation.x = Math.PI / 2
+  hub.castShadow = true
+  hub.receiveShadow = true
+  endurance.add(hub)
+
+  const dockRing = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 16, 64), matDarkHull)
+  dockRing.position.z = 1.5
+  endurance.add(dockRing)
+
+  const ranger = new THREE.Group()
+  ranger.name = 'scene06-ranger'
+
+  const fuseGeo = new THREE.ConeGeometry(4.5, 10, 4)
+  fuseGeo.rotateY(Math.PI / 4)
+  fuseGeo.rotateX(Math.PI / 2)
+  fuseGeo.scale(1.1, 0.2, 1.0)
+
+  const fuseBase = new THREE.Mesh(fuseGeo, matWhiteHull)
+  fuseBase.castShadow = true
+  fuseBase.receiveShadow = true
+  ranger.add(fuseBase)
+
+  const underGeo = fuseGeo.clone()
+  underGeo.scale(0.98, 0.5, 0.98)
+  underGeo.translate(0, -0.15, 0)
+  const under = new THREE.Mesh(underGeo, matDarkHull)
+  under.castShadow = true
+  ranger.add(under)
+
+  const cockpitBlock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 3.5), matWhiteHull)
+  cockpitBlock.position.set(0, 0.4, 0)
+  cockpitBlock.rotation.x = Math.PI / 16
+  cockpitBlock.castShadow = true
+  ranger.add(cockpitBlock)
+
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.5), matGlossBlack)
+  canopy.position.set(0, 0.7, 1.2)
+  canopy.rotation.x = Math.PI / 6
+  ranger.add(canopy)
+
+  const wingGeo = new THREE.BoxGeometry(3.5, 0.2, 4.0)
+  const wingL = new THREE.Mesh(wingGeo, matWhiteHull)
+  wingL.position.set(-2.8, 0, -2.5)
+  wingL.rotation.y = Math.PI / 8
+  wingL.castShadow = true
+  ranger.add(wingL)
+
+  const wingR = new THREE.Mesh(wingGeo, matWhiteHull)
+  wingR.position.set(2.8, 0, -2.5)
+  wingR.rotation.y = -Math.PI / 8
+  wingR.castShadow = true
+  ranger.add(wingR)
+
+  const engines = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 1.5), matDarkHull)
+  engines.position.set(0, -0.1, -4.8)
+  ranger.add(engines)
+
+  ranger.position.set(0, 0, 7.5)
+  ranger.rotation.set(0, 0, 0)
+  endurance.add(ranger)
+
+  endurance.scale.setScalar(WORLD_UNITS_PER_METER)
+  docked.add(endurance)
 
   docked.rotation.set(0.62, -0.12, 0.94)
-
-  return {
-    docked,
-    endurance,
-    ranger,
-  }
+  return { docked }
 }
 
 export default {
@@ -941,7 +840,8 @@ export default {
     const state = {
       orbitAngle: -0.5,
       shipSpinRate: 0.15,
-      elapsed: 0,
+      flybyProgress: 0.14,
+      flybyDuration: 22,
       cameraBasePosition: new THREE.Vector3(),
       cameraBaseQuaternion: new THREE.Quaternion(),
       cameraForward: new THREE.Vector3(),
@@ -1088,21 +988,20 @@ export default {
           return
         }
 
-        state.elapsed += delta
+        state.flybyProgress = (state.flybyProgress + delta / state.flybyDuration) % 1
 
         camera.position.copy(state.cameraBasePosition)
         camera.quaternion.copy(state.cameraBaseQuaternion)
 
-        saturnSystem.saturn.rotation.y += delta * 0.02
+        const flybyT = state.flybyProgress * 2 - 1
+        const lateralOffset = flybyT * metersToWorld(1700)
+        const verticalOffset = metersToWorld(-120)
+        const forwardOffset = metersToWorld(1000)
 
-        const driftLateral = Math.sin(state.elapsed * 0.06) * metersToWorld(2200)
-        const driftVertical = Math.sin(state.elapsed * 0.033 + 1.1) * metersToWorld(820)
-        const driftDepth = Math.sin(state.elapsed * 0.041 + 0.4) * metersToWorld(980)
-
-        dockedEndurance.position.copy(state.shipAnchorPosition)
-        dockedEndurance.position.addScaledVector(state.cameraRight, driftLateral)
-        dockedEndurance.position.addScaledVector(state.cameraUp, driftVertical)
-        dockedEndurance.position.addScaledVector(state.cameraForward, driftDepth)
+        dockedEndurance.position.copy(state.cameraBasePosition)
+        dockedEndurance.position.addScaledVector(state.cameraForward, forwardOffset)
+        dockedEndurance.position.addScaledVector(state.cameraRight, lateralOffset)
+        dockedEndurance.position.addScaledVector(state.cameraUp, verticalOffset)
 
         dockedEndurance.rotation.z += delta * state.shipSpinRate
         dockedEndurance.rotation.y += delta * state.shipSpinRate * 0.25
