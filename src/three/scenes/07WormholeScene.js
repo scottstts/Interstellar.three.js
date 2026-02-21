@@ -77,36 +77,33 @@ function createWormholeSky() {
 
   const getUniverse1 = Fn(([dArg]) => {
     const d = vec3(dArg).toVar()
-    const n = fbm(d.mul(4.0)).toVar()
-    const mw = smoothstep(0.4, 0.6, n).mul(smoothstep(0.6, 0.0, abs(d.y)))
+    const warp = fbm(d.mul(2.4).add(vec3(13.1, -4.2, 7.7))).sub(0.5).mul(0.34).toVar()
+    const dWarped = normalize(vec3(d.x.add(warp), d.y.add(warp.mul(0.28)), d.z.sub(warp.mul(0.52)))).toVar()
 
-    const h = hash(d.mul(150.0)).toVar()
-    const stars = float(0.0).toVar()
-    If(h.greaterThan(0.995), () => {
-      stars.assign(1.0)
-    })
+    const broad = fbm(dWarped.mul(2.9)).toVar()
+    const fine = fbm(dWarped.mul(6.2).add(vec3(7.0, 1.0, 11.0))).toVar()
+    const lane = float(1.0).sub(smoothstep(0.06, 0.78, abs(dWarped.y.add(fine.sub(0.5).mul(0.2)))))
+    const smoke = smoothstep(0.28, 0.75, broad).mul(lane)
+    const wisps = smoothstep(0.54, 0.88, fine).mul(lane).mul(0.42)
 
-    return vec3(0.05, 0.1, 0.2).mul(mw).add(vec3(stars))
+    const tint = mix(vec3(0.03, 0.06, 0.12), vec3(0.16, 0.27, 0.46), fine).toVar()
+    return tint.mul(smoke.add(wisps))
   })
 
   const getUniverse2 = Fn(([dArg]) => {
     const d = vec3(dArg).toVar()
     const tilt = vec3(d.x, d.y.mul(0.8).add(d.z.mul(0.6)), d.z.mul(0.8).sub(d.y.mul(0.6))).toVar()
+    const warp = fbm(tilt.mul(2.0).add(vec3(2.0, 5.0, 8.0))).sub(0.5).mul(0.3).toVar()
+    const tiltedWarped = vec3(tilt.x.add(warp.mul(0.4)), tilt.y, tilt.z.sub(warp.mul(0.45))).toVar()
 
-    const n = fbm(tilt.mul(3.0).add(vec3(1.0, 2.0, 3.0))).toVar()
-    const disk = smoothstep(0.15, 0.0, abs(tilt.y))
-    const glow = smoothstep(0.8, 0.0, abs(tilt.y))
+    const n = fbm(tiltedWarped.mul(2.8).add(vec3(1.0, 2.0, 3.0))).toVar()
+    const nFine = fbm(tiltedWarped.mul(6.0).add(vec3(9.0, 3.0, 1.0))).toVar()
+    const disk = float(1.0).sub(smoothstep(0.0, 0.2, abs(tiltedWarped.y.add(nFine.sub(0.5).mul(0.12)))))
+    const glow = float(1.0).sub(smoothstep(0.0, 0.9, abs(tiltedWarped.y)))
 
-    const col = mix(vec3(0.1, 0.0, 0.05), vec3(1.0, 0.5, 0.1), n).toVar()
-    col.mulAssign(disk.mul(2.0).add(glow))
-
-    const h = hash(d.mul(100.0)).toVar()
-    const stars = float(0.0).toVar()
-    If(h.greaterThan(0.99), () => {
-      stars.assign(0.5)
-    })
-
-    return col.mul(1.5).add(vec3(stars))
+    const col = mix(vec3(0.09, 0.14, 0.28), vec3(0.32, 0.5, 0.78), n).toVar()
+    col.mulAssign(disk.mul(1.45).add(glow.mul(0.22)))
+    return col
   })
 
   const fDeriv = Fn(([yArg, bArg, RthArg]) => {
@@ -151,11 +148,11 @@ function createWormholeSky() {
 
     const phi = float(0.0).toVar()
     const y = vec2(l, pL).toVar()
-    const hStep = float(0.005)
+    const hStep = float(0.0042).add(hash(rd.mul(331.7)).sub(0.5).mul(0.0009)).toVar()
 
     const escaped = float(0.0).toVar()
 
-    Loop(800, () => {
+    Loop(920, () => {
       const k1 = fDeriv(y, b, Rth).toVar()
       const k2 = fDeriv(y.add(k1.mul(hStep).mul(0.5)), b, Rth).toVar()
       const k3 = fDeriv(y.add(k2.mul(hStep).mul(0.5)), b, Rth).toVar()
@@ -183,14 +180,14 @@ function createWormholeSky() {
     })
 
     // Subtle grain to reduce visible banding in smooth gradients.
-    const grain = hash(finalDir.mul(700.0)).sub(0.5).mul(0.012)
+    const grain = hash(finalDir.mul(700.0)).sub(0.5).mul(0.01)
     outCol.addAssign(vec3(grain))
 
     return outCol
   })
 
   // Higher tessellation avoids visible polygon banding in the galaxy haze.
-  const geometry = new THREE.SphereGeometry(500, 256, 256)
+  const geometry = new THREE.SphereGeometry(500, 320, 320)
   const material = new THREE.MeshBasicNodeMaterial({
     side: THREE.BackSide,
   })
@@ -201,6 +198,52 @@ function createWormholeSky() {
   mesh.name = 'scene07-wormhole-sky'
   mesh.renderOrder = -100
   return mesh
+}
+
+function createStarField() {
+  const starCount = 1400
+  const positions = new Float32Array(starCount * 3)
+  const colors = new Float32Array(starCount * 3)
+
+  for (let index = 0; index < starCount; index += 1) {
+    const u = Math.random() * 2 - 1
+    const theta = Math.random() * Math.PI * 2
+    const radius = THREE.MathUtils.lerp(230, 470, Math.pow(Math.random(), 0.6))
+    const radial = Math.sqrt(1 - u * u)
+
+    const x = radius * radial * Math.cos(theta)
+    const y = radius * u
+    const z = radius * radial * Math.sin(theta)
+
+    positions[index * 3] = x
+    positions[index * 3 + 1] = y
+    positions[index * 3 + 2] = z
+
+    const intensity = THREE.MathUtils.lerp(0.65, 1.0, Math.pow(Math.random(), 1.5))
+    const warm = THREE.MathUtils.lerp(0.96, 1.0, Math.random())
+    const cool = THREE.MathUtils.lerp(0.88, 0.99, Math.random())
+    colors[index * 3] = intensity * warm
+    colors[index * 3 + 1] = intensity * 0.97
+    colors[index * 3 + 2] = intensity * cool
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+
+  const material = new THREE.PointsMaterial({
+    size: 1.05,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false,
+  })
+
+  const points = new THREE.Points(geometry, material)
+  points.name = 'scene07-starfield'
+  points.renderOrder = -95
+  return points
 }
 
 function createEndurance() {
@@ -396,6 +439,7 @@ export default {
         sceneGroup.name = 'scene07-wormhole-crossing'
 
         sceneGroup.add(createWormholeSky())
+        sceneGroup.add(createStarField())
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.42)
         ambientLight.name = 'scene07-ambient'
