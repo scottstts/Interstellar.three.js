@@ -98,6 +98,121 @@ function createTerrainMaterial() {
 }
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0)
+const FIGHT_DISTANCE_AHEAD = 10
+const FIGHT_SURFACE_OFFSET = 0.02
+const FIGHT_CHARACTER_SCALE = 0.5
+const CAMERA_SURFACE_CLEARANCE = 0.2
+const FIGHT_REFERENCE_CAMERA_POSITION = new THREE.Vector3(506.728, -5.863, -342.568)
+const FIGHT_REFERENCE_CAMERA_LOOK_AT = new THREE.Vector3(1379.031, -192.585, -794.478)
+
+function alignObjectBottomToY(object3D, targetY) {
+  object3D.updateMatrixWorld(true)
+  const bounds = new THREE.Box3().setFromObject(object3D)
+
+  if (!Number.isFinite(bounds.min.y)) {
+    return
+  }
+
+  object3D.position.y += targetY - bounds.min.y
+}
+
+function rotl32(value, shift) {
+  return ((value << shift) | (value >>> (32 - shift))) >>> 0
+}
+
+function bjfinal(a, b, c) {
+  c = ((c ^ b) - rotl32(b, 14)) >>> 0
+  a = ((a ^ c) - rotl32(c, 11)) >>> 0
+  b = ((b ^ a) - rotl32(a, 25)) >>> 0
+  c = ((c ^ b) - rotl32(b, 16)) >>> 0
+  a = ((a ^ c) - rotl32(c, 4)) >>> 0
+  b = ((b ^ a) - rotl32(a, 14)) >>> 0
+  c = ((c ^ b) - rotl32(b, 24)) >>> 0
+  return c >>> 0
+}
+
+function hashInt3(x, y, z) {
+  const len = 3 >>> 0
+  const seed = (0xdeadbeef + (len << 2) + 13) >>> 0
+  const a = (seed + (x >>> 0)) >>> 0
+  const b = (seed + (y >>> 0)) >>> 0
+  const c = (seed + (z >>> 0)) >>> 0
+  return bjfinal(a, b, c)
+}
+
+function fade(t) {
+  return t * t * t * (t * (t * 6 - 15) + 10)
+}
+
+function gradientFloat3(hash, x, y, z) {
+  const h = hash & 15
+  const u = h < 8 ? x : y
+  const v = h < 4 ? y : h === 12 || h === 14 ? x : z
+  const uTerm = (h & 1) === 0 ? u : -u
+  const vTerm = (h & 2) === 0 ? v : -v
+  return uTerm + vTerm
+}
+
+function trilerp(v0, v1, v2, v3, v4, v5, v6, v7, s, t, r) {
+  const s1 = 1 - s
+  const t1 = 1 - t
+  const r1 = 1 - r
+  return (
+    r1 * (t1 * (v0 * s1 + v1 * s) + t * (v2 * s1 + v3 * s)) +
+    r * (t1 * (v4 * s1 + v5 * s) + t * (v6 * s1 + v7 * s))
+  )
+}
+
+function mxPerlinNoise3(x, y, z) {
+  const xFloor = Math.floor(x)
+  const yFloor = Math.floor(y)
+  const zFloor = Math.floor(z)
+
+  const fx = x - xFloor
+  const fy = y - yFloor
+  const fz = z - zFloor
+
+  const u = fade(fx)
+  const v = fade(fy)
+  const w = fade(fz)
+
+  const n000 = gradientFloat3(hashInt3(xFloor, yFloor, zFloor), fx, fy, fz)
+  const n100 = gradientFloat3(hashInt3(xFloor + 1, yFloor, zFloor), fx - 1, fy, fz)
+  const n010 = gradientFloat3(hashInt3(xFloor, yFloor + 1, zFloor), fx, fy - 1, fz)
+  const n110 = gradientFloat3(hashInt3(xFloor + 1, yFloor + 1, zFloor), fx - 1, fy - 1, fz)
+  const n001 = gradientFloat3(hashInt3(xFloor, yFloor, zFloor + 1), fx, fy, fz - 1)
+  const n101 = gradientFloat3(hashInt3(xFloor + 1, yFloor, zFloor + 1), fx - 1, fy, fz - 1)
+  const n011 = gradientFloat3(hashInt3(xFloor, yFloor + 1, zFloor + 1), fx, fy - 1, fz - 1)
+  const n111 = gradientFloat3(
+    hashInt3(xFloor + 1, yFloor + 1, zFloor + 1),
+    fx - 1,
+    fy - 1,
+    fz - 1,
+  )
+
+  return (
+    0.982 *
+    trilerp(n000, n100, n010, n110, n001, n101, n011, n111, u, v, w)
+  )
+}
+
+function getRawTerrainElevation(x, z) {
+  let h = 0
+  h += mxPerlinNoise3(x * 0.0004, 0.0, z * 0.0004) * 350.0
+
+  const n2 = mxPerlinNoise3(x * 0.002, 100.0, z * 0.002)
+  const ridge = 1.0 - Math.abs(n2)
+  h += ridge * ridge * 150.0
+
+  h += mxPerlinNoise3(x * 0.01, 200.0, z * 0.01) * 25.0
+  return h
+}
+
+const TERRAIN_CENTER_ELEVATION = getRawTerrainElevation(0, 0)
+
+function getTerrainElevationAt(x, z) {
+  return getRawTerrainElevation(x, z) - TERRAIN_CENTER_ELEVATION
+}
 
 function addBlockPart(parent, config) {
   const mesh = new THREE.Mesh(
@@ -274,7 +389,7 @@ function createStandingAstronaut({ name, accentColor }) {
     color: bootColor,
   })
 
-  torso.rotation.z = -0.1
+  torso.rotation.z = 0
   head.rotation.y = 0.3
   leftArm.rotation.z = 0.45
   rightArm.rotation.z = -0.25
@@ -282,8 +397,8 @@ function createStandingAstronaut({ name, accentColor }) {
   leftForearm.rotation.z = -0.65
   rightForearm.rotation.z = -0.05
   rightForearm.rotation.x = -0.55
-  leftLeg.rotation.x = -0.08
-  rightLeg.rotation.x = 0.22
+  leftLeg.rotation.x = 0
+  rightLeg.rotation.x = 0
 
   return figure
 }
@@ -409,38 +524,53 @@ function createFallenAstronaut({ name }) {
   return figure
 }
 
-function createFightCharacters(camera) {
+function createFightCharacters({ anchorPosition, forward }) {
   const fightGroup = new THREE.Group()
   fightGroup.name = 'manns-planet-fight-characters'
 
-  const forward = new THREE.Vector3()
-  camera.getWorldDirection(forward)
-  forward.normalize()
-
   const right = new THREE.Vector3().crossVectors(forward, UP_AXIS).normalize()
 
-  const fightCenter = camera.position.clone().addScaledVector(forward, 18)
-  fightCenter.y -= 17
+  const fightCenter = anchorPosition.clone().addScaledVector(forward, FIGHT_DISTANCE_AHEAD)
 
   const mann = createStandingAstronaut({
     name: 'dr-mann-blocky',
     accentColor: '#cc6f42',
   })
+  mann.scale.setScalar(FIGHT_CHARACTER_SCALE)
+
+  const mannForwardOffset = 0.8
 
   mann.position.copy(fightCenter)
   mann.position.addScaledVector(right, -1.9)
-  mann.position.addScaledVector(forward, 0.8)
+  mann.position.addScaledVector(forward, mannForwardOffset)
+  alignObjectBottomToY(
+    mann,
+    getTerrainElevationAt(mann.position.x, mann.position.z) + FIGHT_SURFACE_OFFSET,
+  )
 
   const cooper = createFallenAstronaut({
     name: 'cooper-blocky',
   })
+  cooper.scale.setScalar(FIGHT_CHARACTER_SCALE)
+
+  const cooperForwardOffset = -1.05
 
   cooper.position.copy(fightCenter)
   cooper.position.addScaledVector(right, 1.35)
-  cooper.position.addScaledVector(forward, -1.05)
+  cooper.position.addScaledVector(forward, cooperForwardOffset)
+  alignObjectBottomToY(
+    cooper,
+    getTerrainElevationAt(cooper.position.x, cooper.position.z) + FIGHT_SURFACE_OFFSET,
+  )
   cooper.rotation.y = Math.atan2(forward.x, forward.z) - Math.PI * 0.25
 
-  mann.lookAt(cooper.position.x, mann.position.y + 1.7, cooper.position.z)
+  const mannToCooper = new THREE.Vector3().subVectors(cooper.position, mann.position)
+  mannToCooper.y = 0
+  if (mannToCooper.lengthSq() > 0.00001) {
+    mann.rotation.y = Math.atan2(mannToCooper.x, mannToCooper.z)
+  }
+  mann.rotation.x = 0
+  mann.rotation.z = 0
 
   fightGroup.add(mann)
   fightGroup.add(cooper)
@@ -462,6 +592,16 @@ export default {
     let previousFov = null
     let previousNear = null
     let previousFar = null
+
+    const clampCameraToTerrain = (camera) => {
+      const minY =
+        getTerrainElevationAt(camera.position.x, camera.position.z) + CAMERA_SURFACE_CLEARANCE
+
+      if (camera.position.y < minY) {
+        camera.position.y = minY
+        camera.updateMatrixWorld()
+      }
+    }
 
     return {
       init({ root, camera, renderer, scene }) {
@@ -500,18 +640,40 @@ export default {
         mesh.name = 'manns-planet-terrain'
         group.add(mesh)
 
-        const fightCharacters = createFightCharacters(camera)
-        group.add(fightCharacters)
-
         camera.fov = 45
         camera.near = 0.1
         camera.far = 15000
-        camera.position.set(506.728, -5.863, -342.568)
-        camera.lookAt(1379.031, -192.585, -794.478)
+        camera.position.set(522.722, -15.244, -342.701)
+        camera.lookAt(-326.001, 93.416, -860.256)
         camera.updateProjectionMatrix()
+        camera.updateMatrixWorld()
+        clampCameraToTerrain(camera)
+
+        const fightAnchorPosition = FIGHT_REFERENCE_CAMERA_POSITION.clone()
+        const fightAnchorMinY =
+          getTerrainElevationAt(fightAnchorPosition.x, fightAnchorPosition.z) + CAMERA_SURFACE_CLEARANCE
+        if (fightAnchorPosition.y < fightAnchorMinY) {
+          fightAnchorPosition.y = fightAnchorMinY
+        }
+
+        const fightForward = new THREE.Vector3()
+          .subVectors(FIGHT_REFERENCE_CAMERA_LOOK_AT, FIGHT_REFERENCE_CAMERA_POSITION)
+          .normalize()
+
+        const fightCharacters = createFightCharacters({
+          anchorPosition: fightAnchorPosition,
+          forward: fightForward,
+        })
+        group.add(fightCharacters)
       },
 
-      update() {},
+      update({ camera }) {
+        if (!camera) {
+          return
+        }
+
+        clampCameraToTerrain(camera)
+      },
 
       resize() {},
 
