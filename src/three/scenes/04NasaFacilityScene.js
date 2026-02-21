@@ -519,7 +519,7 @@ const NasaFacilityScene = {
         scene.background = new THREE.Color(0x0e0a08)
         scene.fog = new THREE.Fog(0x19110e, 34, 105)
 
-        camera.position.set(-14.5, 3.45, 11.2)
+        camera.position.set(6, 3.45, 9)
         camera.lookAt(2.5, 2.2, -2.6)
 
         const room = new THREE.Group()
@@ -612,22 +612,22 @@ const NasaFacilityScene = {
           room.add(trim)
         }
 
-        const roomAmbient = new THREE.AmbientLight(0xcfb08f, 0.8)
+        const roomAmbient = new THREE.AmbientLight(0xd6b695, 1.05)
         room.add(roomAmbient)
 
-        const keyLight = new THREE.DirectionalLight(0xffe3c6, 0.78)
+        const keyLight = new THREE.DirectionalLight(0xffe5c8, 1.02)
         keyLight.position.set(7.5, ROOM_HEIGHT - 0.8, 5.8)
         room.add(keyLight)
 
-        const fillLight = new THREE.DirectionalLight(0xdab291, 0.34)
+        const fillLight = new THREE.DirectionalLight(0xdeb998, 0.52)
         fillLight.position.set(-8, 4.2, -7.2)
         room.add(fillLight)
 
-        const frontWallBounce = new THREE.PointLight(0xf3c49a, 1.08, 32, 1.7)
+        const frontWallBounce = new THREE.PointLight(0xf7c79e, 1.35, 34, 1.6)
         frontWallBounce.position.set(0, 5.2, -11.1)
         room.add(frontWallBounce)
 
-        const backWallBounce = new THREE.PointLight(0xe6b690, 0.72, 30, 1.8)
+        const backWallBounce = new THREE.PointLight(0xe9bb94, 1.0, 32, 1.75)
         backWallBounce.position.set(0, 4.1, 10.5)
         room.add(backWallBounce)
 
@@ -651,7 +651,7 @@ const NasaFacilityScene = {
           const housingMaterial = new THREE.MeshStandardMaterial({
             color: 0xf4f1e9,
             emissive: 0xfff2cf,
-            emissiveIntensity: 0.86,
+            emissiveIntensity: 1.35,
             roughness: 0.4,
             metalness: 0.05,
           })
@@ -659,14 +659,21 @@ const NasaFacilityScene = {
           lightHousing.position.set(x, ROOM_HEIGHT - 0.1, z)
           room.add(lightHousing)
 
-          const tubeLight = new THREE.PointLight(0xffe7c9, 1.18, 28, 1.65)
+          // Primary emitters from each ceiling panel.
+          const tubeLight = new THREE.PointLight(0xffefd1, 2.95, 36, 1.45)
           tubeLight.position.set(x, ROOM_HEIGHT - 0.42, z)
           room.add(tubeLight)
 
+          const panelBoostLight = new THREE.PointLight(0xffe2b8, 2.15, 24, 1.7)
+          panelBoostLight.position.set(x, ROOM_HEIGHT - 0.9, z)
+          room.add(panelBoostLight)
+
           state.fluorescents.push({
-            baseIntensity: 1.12 + (i % 3) * 0.08,
-            baseEmissive: 0.82 + (i % 3) * 0.06,
+            baseIntensity: 2.78 + (i % 3) * 0.18,
+            baseBoostIntensity: 2.02 + (i % 3) * 0.16,
+            baseEmissive: 1.3 + (i % 3) * 0.08,
             light: tubeLight,
+            boostLight: panelBoostLight,
             material: housingMaterial,
             phase: i * 0.87,
           })
@@ -779,8 +786,8 @@ const NasaFacilityScene = {
         }
 
         const standingProfessor = createStandingProfessor()
-        standingProfessor.position.set(15.9, -1.38, -1.45)
-        standingProfessor.rotation.y = -Math.PI * 0.52
+        standingProfessor.position.set(-3, -1.38, -9)
+        standingProfessor.rotation.y = 0.5
         room.add(standingProfessor)
 
         const portraitPositions = [-15.4, -12.2, -9.1, -5.9, -2.8, 2.8, 5.9, 9.1, 12.2, 15.4]
@@ -971,10 +978,11 @@ const NasaFacilityScene = {
         }
 
         for (const strip of state.fluorescents) {
-          const baseWave = 0.97 + Math.sin(elapsed * 0.7 + strip.phase + state.timeOffset) * 0.035
-          const fastFlicker = Math.sin(elapsed * 11 + strip.phase * 1.8) * 0.006
+          const baseWave = 0.985 + Math.sin(elapsed * 0.62 + strip.phase + state.timeOffset) * 0.025
+          const fastFlicker = Math.sin(elapsed * 9 + strip.phase * 1.6) * 0.004
           const intensityScale = baseWave + fastFlicker
           strip.light.intensity = strip.baseIntensity * intensityScale
+          strip.boostLight.intensity = strip.baseBoostIntensity * intensityScale
           strip.material.emissiveIntensity = strip.baseEmissive * intensityScale
         }
 
