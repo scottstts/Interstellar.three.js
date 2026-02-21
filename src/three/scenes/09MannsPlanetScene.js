@@ -214,6 +214,18 @@ function getTerrainElevationAt(x, z) {
   return getRawTerrainElevation(x, z) - TERRAIN_CENTER_ELEVATION
 }
 
+function getTerrainNormalAt(x, z, delta = 0.5) {
+  const hL = getTerrainElevationAt(x - delta, z)
+  const hR = getTerrainElevationAt(x + delta, z)
+  const hD = getTerrainElevationAt(x, z - delta)
+  const hU = getTerrainElevationAt(x, z + delta)
+
+  const dx = (hR - hL) / (delta * 2)
+  const dz = (hU - hD) / (delta * 2)
+
+  return new THREE.Vector3(-dx, 1, -dz).normalize()
+}
+
 function addBlockPart(parent, config) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(config.size[0], config.size[1], config.size[2]),
@@ -250,15 +262,15 @@ function createStandingAstronaut({ name, accentColor }) {
 
   const torso = addBlockPart(figure, {
     name: `${name}-torso`,
-    size: [1.25, 1.55, 0.75],
-    position: [0, 2.1, 0],
+    size: [1.18, 1.6, 0.72],
+    position: [0, 2.08, 0],
     color: suitMain,
   })
 
   addBlockPart(figure, {
     name: `${name}-chest-plate`,
-    size: [1.05, 0.85, 0.2],
-    position: [0, 2.2, 0.48],
+    size: [0.96, 0.8, 0.18],
+    position: [0, 2.18, 0.45],
     color: suitPanel,
     roughness: 0.66,
     metalness: 0.24,
@@ -266,8 +278,8 @@ function createStandingAstronaut({ name, accentColor }) {
 
   addBlockPart(figure, {
     name: `${name}-backpack`,
-    size: [0.95, 1, 0.4],
-    position: [0, 2.1, -0.57],
+    size: [0.86, 0.95, 0.34],
+    position: [0, 2.08, -0.53],
     color: suitPanel,
     roughness: 0.64,
     metalness: 0.26,
@@ -275,36 +287,36 @@ function createStandingAstronaut({ name, accentColor }) {
 
   addBlockPart(figure, {
     name: `${name}-accent-collar`,
-    size: [0.55, 0.18, 0.25],
-    position: [0, 2.8, 0.45],
+    size: [0.52, 0.16, 0.22],
+    position: [0, 2.78, 0.42],
     color: accentColor,
   })
 
   addBlockPart(figure, {
     name: `${name}-accent-stripe`,
-    size: [0.2, 0.7, 0.08],
-    position: [0.3, 2.2, 0.58],
+    size: [0.16, 0.64, 0.07],
+    position: [0.26, 2.18, 0.53],
     color: accentColor,
   })
 
   addBlockPart(figure, {
     name: `${name}-left-shoulder`,
-    size: [0.42, 0.2, 0.44],
-    position: [-0.86, 2.75, 0],
+    size: [0.4, 0.22, 0.4],
+    position: [-0.78, 2.72, 0],
     color: accentColor,
   })
 
   addBlockPart(figure, {
     name: `${name}-right-shoulder`,
-    size: [0.42, 0.2, 0.44],
-    position: [0.86, 2.75, 0],
+    size: [0.4, 0.22, 0.4],
+    position: [0.78, 2.72, 0],
     color: accentColor,
   })
 
   const head = addBlockPart(figure, {
     name: `${name}-helmet`,
-    size: [0.86, 0.86, 0.86],
-    position: [0, 3.4, 0],
+    size: [0.82, 0.82, 0.82],
+    position: [0, 3.34, 0],
     color: suitMain,
     roughness: 0.62,
     metalness: 0.3,
@@ -312,8 +324,8 @@ function createStandingAstronaut({ name, accentColor }) {
 
   addBlockPart(figure, {
     name: `${name}-visor`,
-    size: [0.62, 0.24, 0.18],
-    position: [0, 3.35, 0.5],
+    size: [0.58, 0.22, 0.16],
+    position: [0, 3.32, 0.46],
     color: visorDark,
     roughness: 0.28,
     metalness: 0.08,
@@ -321,82 +333,82 @@ function createStandingAstronaut({ name, accentColor }) {
 
   const leftArm = addBlockPart(figure, {
     name: `${name}-left-arm`,
-    size: [0.38, 1.25, 0.38],
-    position: [-0.86, 2.15, 0],
+    size: [0.34, 1.12, 0.34],
+    position: [-0.78, 2.05, 0],
     color: suitMain,
   })
 
   const rightArm = addBlockPart(figure, {
     name: `${name}-right-arm`,
-    size: [0.38, 1.25, 0.38],
-    position: [0.86, 2.15, 0],
+    size: [0.34, 1.12, 0.34],
+    position: [0.78, 2.05, 0],
     color: suitMain,
   })
 
   const leftForearm = addBlockPart(figure, {
     name: `${name}-left-forearm`,
-    size: [0.34, 0.82, 0.34],
-    position: [-0.86, 1.45, 0.08],
+    size: [0.31, 0.74, 0.31],
+    position: [-0.78, 1.34, 0.02],
     color: suitPanel,
   })
 
   const rightForearm = addBlockPart(figure, {
     name: `${name}-right-forearm`,
-    size: [0.34, 0.82, 0.34],
-    position: [0.86, 1.45, 0.08],
+    size: [0.31, 0.74, 0.31],
+    position: [0.78, 1.34, 0.02],
     color: suitPanel,
   })
 
   addBlockPart(figure, {
     name: `${name}-left-glove`,
-    size: [0.34, 0.3, 0.42],
-    position: [-0.86, 0.98, 0.17],
+    size: [0.31, 0.24, 0.36],
+    position: [-0.78, 0.9, 0.08],
     color: gloveColor,
   })
 
   addBlockPart(figure, {
     name: `${name}-right-glove`,
-    size: [0.34, 0.3, 0.42],
-    position: [0.86, 0.98, 0.17],
+    size: [0.31, 0.24, 0.36],
+    position: [0.78, 0.9, 0.08],
     color: gloveColor,
   })
 
   const leftLeg = addBlockPart(figure, {
     name: `${name}-left-leg`,
-    size: [0.43, 1.15, 0.43],
-    position: [-0.3, 0.85, 0],
+    size: [0.4, 1.14, 0.4],
+    position: [-0.24, 0.84, 0],
     color: suitMain,
   })
 
   const rightLeg = addBlockPart(figure, {
     name: `${name}-right-leg`,
-    size: [0.43, 1.15, 0.43],
-    position: [0.3, 0.85, 0],
+    size: [0.4, 1.14, 0.4],
+    position: [0.24, 0.84, 0],
     color: suitMain,
   })
 
   addBlockPart(figure, {
     name: `${name}-left-boot`,
-    size: [0.47, 0.3, 0.66],
-    position: [-0.3, 0.16, 0.1],
+    size: [0.44, 0.26, 0.58],
+    position: [-0.24, 0.16, 0.08],
     color: bootColor,
   })
 
   addBlockPart(figure, {
     name: `${name}-right-boot`,
-    size: [0.47, 0.3, 0.66],
-    position: [0.3, 0.16, 0.1],
+    size: [0.44, 0.26, 0.58],
+    position: [0.24, 0.16, 0.08],
     color: bootColor,
   })
 
   torso.rotation.z = 0
-  head.rotation.y = 0.3
-  leftArm.rotation.z = 0.45
-  rightArm.rotation.z = -0.25
-  rightArm.rotation.x = -0.2
-  leftForearm.rotation.z = -0.65
-  rightForearm.rotation.z = -0.05
-  rightForearm.rotation.x = -0.55
+  head.rotation.y = 0.16
+  leftArm.rotation.z = 0.06
+  rightArm.rotation.z = -0.06
+  rightArm.rotation.x = -0.04
+  leftForearm.rotation.z = -0.08
+  rightForearm.rotation.z = 0.08
+  rightForearm.rotation.x = -0.08
   leftLeg.rotation.x = 0
   rightLeg.rotation.x = 0
 
@@ -404,121 +416,9 @@ function createStandingAstronaut({ name, accentColor }) {
 }
 
 function createFallenAstronaut({ name }) {
-  const figure = new THREE.Group()
-  figure.name = name
-  figure.position.y = -0.55
-  figure.rotation.set(0.05, 0, -0.18)
-
-  const suitMain = '#d7dde2'
-  const suitPanel = '#a3acb4'
-  const suitDark = '#4f5a64'
-  const visorDark = '#111922'
-  const gloveColor = '#66727d'
-  const bootColor = '#5b6670'
-
-  addBlockPart(figure, {
-    name: `${name}-torso`,
-    size: [1.6, 0.9, 0.78],
-    position: [0, 0.95, 0],
-    color: suitMain,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-chest-plate`,
-    size: [1.05, 0.6, 0.2],
-    position: [0, 1.2, 0.4],
-    color: suitPanel,
-    roughness: 0.66,
-    metalness: 0.24,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-backpack`,
-    size: [1.2, 0.7, 0.32],
-    position: [-0.05, 0.68, -0.5],
-    color: suitPanel,
-    roughness: 0.64,
-    metalness: 0.26,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-helmet`,
-    size: [0.84, 0.84, 0.84],
-    position: [-1.15, 1.1, 0.02],
-    color: suitMain,
-    roughness: 0.62,
-    metalness: 0.3,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-visor`,
-    size: [0.6, 0.22, 0.18],
-    position: [-1.15, 1.08, 0.48],
-    color: visorDark,
-    roughness: 0.28,
-    metalness: 0.08,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-left-arm`,
-    size: [0.42, 0.95, 0.42],
-    position: [-0.2, 1, 0.95],
-    rotation: [0.15, 0.2, 1.1],
-    color: suitMain,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-right-arm`,
-    size: [0.42, 0.95, 0.42],
-    position: [0.6, 0.95, -0.9],
-    rotation: [0.1, -0.2, -1.05],
-    color: suitMain,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-left-glove`,
-    size: [0.36, 0.3, 0.4],
-    position: [-0.52, 1.36, 1.05],
-    color: gloveColor,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-right-glove`,
-    size: [0.36, 0.3, 0.4],
-    position: [0.95, 1.22, -0.98],
-    color: gloveColor,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-left-leg`,
-    size: [0.95, 0.42, 0.42],
-    position: [1.1, 0.82, 0.24],
-    rotation: [0.15, 0.08, 0.18],
-    color: suitDark,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-right-leg`,
-    size: [0.95, 0.42, 0.42],
-    position: [1.1, 0.82, -0.24],
-    rotation: [0.02, -0.08, 0.08],
-    color: suitDark,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-left-boot`,
-    size: [0.56, 0.42, 0.46],
-    position: [1.75, 0.78, 0.24],
-    rotation: [0.08, 0.2, 0.05],
-    color: bootColor,
-  })
-
-  addBlockPart(figure, {
-    name: `${name}-right-boot`,
-    size: [0.56, 0.42, 0.46],
-    position: [1.75, 0.78, -0.24],
-    rotation: [0.02, -0.1, -0.04],
-    color: bootColor,
+  const figure = createStandingAstronaut({
+    name,
+    accentColor: '#74808b',
   })
 
   return figure
@@ -558,11 +458,49 @@ function createFightCharacters({ anchorPosition, forward }) {
   cooper.position.copy(fightCenter)
   cooper.position.addScaledVector(right, 1.35)
   cooper.position.addScaledVector(forward, cooperForwardOffset)
+
+  const cooperSurfaceNormal = getTerrainNormalAt(cooper.position.x, cooper.position.z)
+
+  const feetTowardMann = new THREE.Vector3(
+    mann.position.x - cooper.position.x,
+    0,
+    mann.position.z - cooper.position.z,
+  )
+
+  if (feetTowardMann.lengthSq() < 0.00001) {
+    feetTowardMann.copy(right)
+  }
+  feetTowardMann.normalize()
+
+  const feetTangent = feetTowardMann.sub(
+    cooperSurfaceNormal.clone().multiplyScalar(feetTowardMann.dot(cooperSurfaceNormal)),
+  )
+
+  if (feetTangent.lengthSq() < 0.00001) {
+    feetTangent.copy(right)
+  }
+  feetTangent.normalize()
+
+  const cooperHeadDirection = feetTangent.clone().negate()
+  const cooperXAxis = new THREE.Vector3().crossVectors(cooperHeadDirection, cooperSurfaceNormal)
+
+  if (cooperXAxis.lengthSq() < 0.00001) {
+    cooperXAxis.set(1, 0, 0)
+  }
+  cooperXAxis.normalize()
+
+  const cooperYAxis = new THREE.Vector3().crossVectors(cooperSurfaceNormal, cooperXAxis).normalize()
+  const cooperBasis = new THREE.Matrix4().makeBasis(
+    cooperXAxis,
+    cooperYAxis,
+    cooperSurfaceNormal,
+  )
+  cooper.quaternion.setFromRotationMatrix(cooperBasis)
+
   alignObjectBottomToY(
     cooper,
     getTerrainElevationAt(cooper.position.x, cooper.position.z) + FIGHT_SURFACE_OFFSET,
   )
-  cooper.rotation.y = Math.atan2(forward.x, forward.z) - Math.PI * 0.25
 
   const mannToCooper = new THREE.Vector3().subVectors(cooper.position, mann.position)
   mannToCooper.y = 0
