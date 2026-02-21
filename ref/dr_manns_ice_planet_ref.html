@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interstellar: Mann's Planet - Multi-Biome Procedural Terrain</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute; top: 10px; width: 100%;
+            text-align: center; color: rgba(255,255,255,0.8);
+            font-family: sans-serif; font-size: 14px; pointer-events: none;
+            text-shadow: 1px 1px 3px black;
+        }
+    </style>
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/",
+                "three/nodes": "https://unpkg.com/three@0.164.0/examples/jsm/nodes/Nodes.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">Multi-Biome Procedural TSL Terrain | WebGPU Required</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { 
+            color, float, vec2, vec3, positionLocal, 
+            mx_noise_float, mix, smoothstep, clamp,
+            MeshStandardNodeMaterial, normalize, dot, abs 
+        } from 'three/nodes';
+        import WebGPURenderer from 'three/addons/renderers/webgpu/WebGPURenderer.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Scene & Cinematic Atmosphere
+        const scene = new THREE.Scene();
+        const fogColor = new THREE.Color('#d4cfcc'); // Dusty, desaturated pale rose/grey
+        scene.background = fogColor;
+        scene.fog = new THREE.FogExp2(fogColor, 0.0018); // Heavy atmospheric perspective
+
+        // 2. Lighting
+        const ambientLight = new THREE.AmbientLight('#aab8c4', 0.8); // Cool sky bounce
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight('#fff0e0', 2.0); // Harsh sun
+        dirLight.position.set(800, 600, -1000);
+        scene.add(dirLight);
+
+        // 3. Camera
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 15000);
+        camera.position.set(0, 12, 60); // Low angle, matching the cinematic shot
+
+        // 4. WebGPU Renderer
+        const renderer = new WebGPURenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02;
+
+        // 5. Geometry
+        const geometry = new THREE.PlaneGeometry(8000, 8000, 1024, 1024);
+        geometry.rotateX(-Math.PI / 2);
+
+        // ==========================================
+        // 6. TSL SHADER: LAYERED BIOME APPROACH
+        // ==========================================
+        const material = new MeshStandardNodeMaterial();
+        const posXZ = positionLocal.xz;
+
+        // Helper: Multi-octave FBM for organic macro shapes
+        const getElevation = (p) => {
+            let h = float(0.0);
+            // Base rolling landscape
+            h = h.add(mx_noise_float(vec3(p.x.mul(0.0004), float(0.0), p.y.mul(0.0004))).mul(350.0));
+            // Ridged mountains (the defining feature)
+            let n2 = mx_noise_float(vec3(p.x.mul(0.002), float(100.0), p.y.mul(0.002)));
+            let ridge = float(1.0).sub(abs(n2));
+            h = h.add(ridge.mul(ridge).mul(150.0));
+            // Mid-level broken ground
+            h = h.add(mx_noise_float(vec3(p.x.mul(0.01), float(200.0), p.y.mul(0.01))).mul(25.0));
+            return h;
+        };
+
+        const rawElevation = getElevation(posXZ);
+        const centerElevation = getElevation(vec2(0.0, 0.0));
+        const finalElevation = rawElevation.sub(centerElevation);
+        material.positionNode = positionLocal.add(vec3(0, finalElevation, 0));
+
+        // Calculate MACRO geometric normal
+        const delta = float(0.5); 
+        const hL = getElevation(posXZ.add(vec2(delta.negate(), float(0.0))));
+        const hR = getElevation(posXZ.add(vec2(delta, float(0.0))));
+        const hD = getElevation(posXZ.add(vec2(float(0.0), delta.negate())));
+        const hU = getElevation(posXZ.add(vec2(float(0.0), delta)));
+        
+        const dx = hR.sub(hL).div(delta.mul(2.0));
+        const dz = hU.sub(hD).div(delta.mul(2.0));
+        const macroNormal = normalize(vec3(dx.negate(), float(1.0), dz.negate()));
+
+        // ==========================================
+        // MASKS: Determining WHERE materials go
+        // ==========================================
+        
+        // Mask 1: Slope (Steep = Rock, Flat = Ground)
+        const slope = dot(macroNormal, vec3(0.0, 1.0, 0.0));
+        const slopeNoise = mx_noise_float(vec3(posXZ.x.mul(0.01), float(5.0), posXZ.y.mul(0.01))).mul(0.1);
+        const rockMask = smoothstep(float(0.75), float(0.65), slope.add(slopeNoise)); // 1.0 on steep cliffs
+
+        // Mask 2: Wind-Scoured Patches (Large, sweeping low-frequency zones)
+        // Stretched in one direction to simulate wind corridors
+        const windScourNoise = mx_noise_float(vec3(posXZ.x.mul(0.003), float(10.0), posXZ.y.mul(0.001)));
+        const scourMask = smoothstep(float(-0.2), float(0.3), windScourNoise); 
+
+        // Mask 3: Foreground Grit/Dirt Patches (Medium frequency, dark crust patches)
+        const gritNoise = mx_noise_float(vec3(posXZ.x.mul(0.08), float(20.0), posXZ.y.mul(0.08)));
+        const gritMask = smoothstep(float(0.3), float(0.7), gritNoise);
+
+        // ==========================================
+        // MICRO-MATERIALS: Defining WHAT goes there
+        // ==========================================
+
+        // --- Material A: Pristine Frost / Snow ---
+        const colorSnow = color('#e6ecf0');
+        const roughSnow = float(0.9);
+        // Very fine, granular high-frequency bump
+        const bumpSnowX = mx_noise_float(vec3(posXZ.x.mul(0.8), float(30.0), posXZ.y.mul(0.8)));
+        const bumpSnowZ = mx_noise_float(vec3(posXZ.x.mul(0.8), float(31.0), posXZ.y.mul(0.8)));
+        const bumpSnow = vec3(bumpSnowX.mul(0.2), float(0.0), bumpSnowZ.mul(0.2));
+
+        // --- Material B: Wind-Scoured Ice ---
+        const colorIce = color('#9ca7b0'); // Greyish-blue, exposed
+        const roughIce = float(0.4); // Shinier, polished by wind
+        // Directional, stretched streaks for bump
+        const bumpIceX = mx_noise_float(vec3(posXZ.x.mul(0.2), float(40.0), posXZ.y.mul(0.05)));
+        const bumpIceZ = mx_noise_float(vec3(posXZ.x.mul(0.2), float(41.0), posXZ.y.mul(0.05)));
+        const bumpIce = vec3(bumpIceX.mul(0.1), float(0.0), bumpIceZ.mul(0.1));
+
+        // --- Material C: Dark Crust / Grit ---
+        const colorGrit = color('#3c4245'); // Dark charcoal
+        const roughGrit = float(0.95); // Very matte
+        // Chunky, medium bump
+        const bumpGritX = mx_noise_float(vec3(posXZ.x.mul(0.4), float(50.0), posXZ.y.mul(0.4)));
+        const bumpGritZ = mx_noise_float(vec3(posXZ.x.mul(0.4), float(51.0), posXZ.y.mul(0.4)));
+        const bumpGrit = vec3(bumpGritX.mul(0.4), float(0.0), bumpGritZ.mul(0.4));
+
+        // --- Material D: Solid Ridge Rock ---
+        const colorRock = color('#2a2d2f');
+        const roughRock = float(0.85);
+        const bumpRockX = mx_noise_float(vec3(posXZ.x.mul(0.1), float(60.0), posXZ.y.mul(0.1)));
+        const bumpRockZ = mx_noise_float(vec3(posXZ.x.mul(0.1), float(61.0), posXZ.y.mul(0.1)));
+        const bumpRock = vec3(bumpRockX.mul(0.6), float(0.0), bumpRockZ.mul(0.6));
+
+        // ==========================================
+        // BLENDING: Mixing materials using the masks
+        // ==========================================
+        
+        // 1. Blend Snow and Scoured Ice using the large sweeping Scour Mask
+        let groundColor = mix(colorSnow, colorIce, scourMask);
+        let groundRough = mix(roughSnow, roughIce, scourMask);
+        let groundBump = mix(bumpSnow, bumpIce, scourMask);
+
+        // 2. Layer the Dark Grit/Crust on top of the ground using the Grit Mask
+        groundColor = mix(groundColor, colorGrit, gritMask);
+        groundRough = mix(groundRough, roughGrit, gritMask);
+        groundBump = mix(groundBump, bumpGrit, gritMask);
+
+        // 3. Finally, blend the entire Ground with Solid Rock based on the slope/cliff Mask
+        material.colorNode = mix(groundColor, colorRock, rockMask);
+        material.roughnessNode = mix(groundRough, roughRock, rockMask);
+        
+        // Combine Macro Normal with the procedurally blended Micro Bumps
+        const finalBumpVector = mix(groundBump, bumpRock, rockMask);
+        material.normalNode = normalize(macroNormal.add(finalBumpVector));
+        
+        material.metalnessNode = float(0.0);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Render Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
