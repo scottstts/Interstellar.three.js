@@ -21,6 +21,7 @@ import {
   sin,
   smoothstep,
   sqrt,
+  time,
   vec2,
   vec3,
 } from 'three/tsl'
@@ -77,11 +78,15 @@ function createWormholeSky() {
 
   const getUniverse1 = Fn(([dArg]) => {
     const d = vec3(dArg).toVar()
-    const warp = fbm(d.mul(2.4).add(vec3(13.1, -4.2, 7.7))).sub(0.5).mul(0.34).toVar()
+    const drift = time.mul(0.055).toVar()
+    const flowA = vec3(drift, drift.mul(0.36), drift.mul(-0.24)).toVar()
+    const flowB = vec3(drift.mul(-0.17), drift.mul(0.43), drift.mul(0.31)).toVar()
+
+    const warp = fbm(d.mul(2.4).add(vec3(13.1, -4.2, 7.7)).add(flowA)).sub(0.5).mul(0.34).toVar()
     const dWarped = normalize(vec3(d.x.add(warp), d.y.add(warp.mul(0.28)), d.z.sub(warp.mul(0.52)))).toVar()
 
     const broad = fbm(dWarped.mul(2.9)).toVar()
-    const fine = fbm(dWarped.mul(6.2).add(vec3(7.0, 1.0, 11.0))).toVar()
+    const fine = fbm(dWarped.mul(6.2).add(vec3(7.0, 1.0, 11.0)).add(flowB)).toVar()
     const lane = float(1.0).sub(smoothstep(0.06, 0.78, abs(dWarped.y.add(fine.sub(0.5).mul(0.2)))))
     const smoke = smoothstep(0.28, 0.75, broad).mul(lane)
     const wisps = smoothstep(0.54, 0.88, fine).mul(lane).mul(0.42)
@@ -92,12 +97,16 @@ function createWormholeSky() {
 
   const getUniverse2 = Fn(([dArg]) => {
     const d = vec3(dArg).toVar()
+    const drift = time.mul(0.048).toVar()
+    const flowA = vec3(drift.mul(-0.22), drift.mul(0.49), drift.mul(0.27)).toVar()
+    const flowB = vec3(drift.mul(0.32), drift.mul(-0.18), drift.mul(0.44)).toVar()
+
     const tilt = vec3(d.x, d.y.mul(0.8).add(d.z.mul(0.6)), d.z.mul(0.8).sub(d.y.mul(0.6))).toVar()
-    const warp = fbm(tilt.mul(2.0).add(vec3(2.0, 5.0, 8.0))).sub(0.5).mul(0.3).toVar()
+    const warp = fbm(tilt.mul(2.0).add(vec3(2.0, 5.0, 8.0)).add(flowA)).sub(0.5).mul(0.3).toVar()
     const tiltedWarped = vec3(tilt.x.add(warp.mul(0.4)), tilt.y, tilt.z.sub(warp.mul(0.45))).toVar()
 
-    const n = fbm(tiltedWarped.mul(2.8).add(vec3(1.0, 2.0, 3.0))).toVar()
-    const nFine = fbm(tiltedWarped.mul(6.0).add(vec3(9.0, 3.0, 1.0))).toVar()
+    const n = fbm(tiltedWarped.mul(2.8).add(vec3(1.0, 2.0, 3.0)).add(flowB)).toVar()
+    const nFine = fbm(tiltedWarped.mul(6.0).add(vec3(9.0, 3.0, 1.0)).add(flowB.mul(1.6))).toVar()
     const disk = float(1.0).sub(smoothstep(0.0, 0.2, abs(tiltedWarped.y.add(nFine.sub(0.5).mul(0.12)))))
     const glow = float(1.0).sub(smoothstep(0.0, 0.9, abs(tiltedWarped.y)))
 
@@ -421,7 +430,7 @@ export default {
     }
 
     const flybyStart = new THREE.Vector3(-9.4, 1.25, 11.8)
-    const flybyEnd = new THREE.Vector3(0.15, 0.0, -170)
+    const flybyEnd = new THREE.Vector3(0, -25, -170)
     const flybyDirection = flybyEnd.clone().sub(flybyStart)
 
     function setShipTransform(progress01) {
