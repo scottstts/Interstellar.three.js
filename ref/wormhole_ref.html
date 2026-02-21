@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Realistic Physics-Based Wormhole (Pure TSL)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.170.0/build/three.webgpu.js",
+            "three/tsl": "https://unpkg.com/three@0.170.0/build/three.webgpu.js",
+            "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { 
+            Fn, float, vec2, vec3, 
+            If, Loop, Break, 
+            fract, floor, mix, dot, cross, normalize, length, cos, sin, abs, max, smoothstep, sqrt,
+            cameraPosition, positionWorld 
+        } from 'three/tsl';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Initialize WebGPU Renderer
+        const renderer = new THREE.WebGPURenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 7);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.minDistance = 2.0;
+
+        // --- 2. Pure TSL Native Shader Logic ---
+        
+        // Pseudo-random hash
+        const hash = Fn(([p_arg]) => {
+            const p = vec3(p_arg).toVar();
+            const p3 = fract(p.mul(0.1031)).toVar();
+            p3.addAssign(dot(p3, p3.zyx.add(31.32)));
+            return fract(p3.x.add(p3.y).mul(p3.z));
+        });
+
+        // 3D Noise
+        const noise = Fn(([x_arg]) => {
+            const x = vec3(x_arg).toVar();
+            const p = floor(x).toVar();
+            const f_val = fract(x).toVar();
+            const u = f_val.mul(f_val).mul(float(3.0).sub(f_val.mul(2.0))).toVar();
+
+            return mix(
+                mix(
+                    mix(hash(p.add(vec3(0, 0, 0))), hash(p.add(vec3(1, 0, 0))), u.x),
+                    mix(hash(p.add(vec3(0, 1, 0))), hash(p.add(vec3(1, 1, 0))), u.x),
+                    u.y
+                ),
+                mix(
+                    mix(hash(p.add(vec3(0, 0, 1))), hash(p.add(vec3(1, 0, 1))), u.x),
+                    mix(hash(p.add(vec3(0, 1, 1))), hash(p.add(vec3(1, 1, 1))), u.x),
+                    u.y
+                ),
+                u.z
+            );
+        });
+
+        // Fractal Brownian Motion
+        const fbm = Fn(([x_arg]) => {
+            const x = vec3(x_arg).toVar();
+            const v = float(0.0).toVar();
+            const a = float(0.5).toVar();
+            const p = vec3(x).toVar();
+
+            Loop(5, () => {
+                v.addAssign(a.mul(noise(p)));
+                p.mulAssign(2.0);
+                a.mulAssign(0.5);
+            });
+
+            return v;
+        });
+
+        // Universe 1: Standard Starry Galaxy
+        const getUniverse1 = Fn(([d_arg]) => {
+            const d = vec3(d_arg).toVar();
+            const n = fbm(d.mul(4.0)).toVar();
+            const mw = smoothstep(0.4, 0.6, n).mul(smoothstep(0.6, 0.0, abs(d.y)));
+            
+            const h = hash(d.mul(150.0)).toVar();
+            const stars = float(0.0).toVar();
+            If(h.greaterThan(0.995), () => {
+                stars.assign(1.0);
+            });
+
+            return vec3(0.05, 0.1, 0.2).mul(mw).add(vec3(stars));
+        });
+
+        // Universe 2: Gargantua System (Accretion disk vibe)
+        const getUniverse2 = Fn(([d_arg]) => {
+            const d = vec3(d_arg).toVar();
+            // Tilt the accretion disk for visual appeal
+            const tilt = vec3(d.x, d.y.mul(0.8).add(d.z.mul(0.6)), d.z.mul(0.8).sub(d.y.mul(0.6))).toVar();
+            
+            const n = fbm(tilt.mul(3.0).add(vec3(1.0, 2.0, 3.0))).toVar();
+            const disk = smoothstep(0.15, 0.0, abs(tilt.y));
+            const glow = smoothstep(0.8, 0.0, abs(tilt.y));
+            
+            const col = mix(vec3(0.1, 0.0, 0.05), vec3(1.0, 0.5, 0.1), n).toVar();
+            col.mulAssign(disk.mul(2.0).add(glow));
+            
+            const h = hash(d.mul(100.0)).toVar();
+            const stars = float(0.0).toVar();
+            If(h.greaterThan(0.99), () => {
+                stars.assign(0.5);
+            });
+            
+            return col.mul(1.5).add(vec3(stars));
+        });
+
+        // Hamiltonian Geodesic Equations
+        const f_deriv = Fn(([y_arg, b_arg, Rth_arg]) => {
+            const y = vec2(y_arg).toVar();
+            const b = float(b_arg).toVar();
+            const Rth = float(Rth_arg).toVar();
+            
+            const l = y.x.toVar();
+            const p_l = y.y.toVar();
+            const r2 = l.mul(l).add(Rth.mul(Rth)).toVar();
+            
+            return vec2(r2.mul(p_l), b.mul(b).mul(l).div(r2));
+        });
+
+        // Main Raymarcher & RK4 Integrator
+        const wormholePhysics = Fn(([ro_arg, rd_arg]) => {
+            const ro = vec3(ro_arg).toVar();
+            const rd = normalize(rd_arg).toVar();
+            
+            const Rth = float(1.2);      // Throat Radius
+            const max_dist = float(40.0); // Escape distance
+
+            const r_obs = length(ro).toVar();
+            
+            // Initial states
+            const l = sqrt(max(r_obs.mul(r_obs).sub(Rth.mul(Rth)), 0.001)).toVar();
+            const p_l = dot(normalize(ro), rd).toVar();
+            
+            const cro = cross(ro, rd).toVar();
+            const b = length(cro).toVar(); // Impact Parameter (conserved angular momentum)
+            
+            // Frame mapping parameters to map 2D geodesic calculations back to 3D rendering
+            const n = vec3(0.0).toVar();
+            If(b.lessThan(0.0001), () => {
+                n.assign(normalize(cross(ro, vec3(0.0, 1.0, 0.0))));
+                If(length(n).lessThan(0.0001), () => {
+                    n.assign(normalize(cross(ro, vec3(1.0, 0.0, 0.0))));
+                });
+            }).Else(() => {
+                n.assign(normalize(cro));
+            });
+            
+            const u = normalize(ro).toVar();
+            const v = cross(n, u).toVar();
+            
+            const phi = float(0.0).toVar();
+            const y = vec2(l, p_l).toVar();
+            const h_step = float(0.005);
+            
+            const escaped = float(0.0).toVar();
+            
+            // RK4 Gravitational Lensing Integrator
+            Loop(800, () => {
+                const k1 = f_deriv(y, b, Rth).toVar();
+                const k2 = f_deriv(y.add(k1.mul(h_step).mul(0.5)), b, Rth).toVar();
+                const k3 = f_deriv(y.add(k2.mul(h_step).mul(0.5)), b, Rth).toVar();
+                const k4 = f_deriv(y.add(k3.mul(h_step)), b, Rth).toVar();
+                
+                y.addAssign(k1.add(k2.mul(2.0)).add(k3.mul(2.0)).add(k4).mul(h_step.div(6.0)));
+                phi.addAssign(h_step.mul(b));
+                
+                If(abs(y.x).greaterThan(max_dist), () => {
+                    escaped.assign(1.0);
+                    Break(); // Halt calculation once photon escapes gravitational pull
+                });
+            });
+            
+            // Map 2D exit angle back to Universe 3D Coordinates
+            const final_dir = normalize(u.mul(cos(phi)).add(v.mul(sin(phi)))).toVar();
+            
+            const outCol = vec3(0.0).toVar();
+            
+            If(escaped.equal(0.0), () => {
+                // Caught in photon sphere ring
+                outCol.assign(vec3(1.0, 0.8, 0.4).mul(2.0));
+            }).ElseIf(y.x.lessThan(0.0), () => {
+                // Deflected through to Universe 2
+                outCol.assign(getUniverse2(final_dir));
+            }).Else(() => {
+                // Bounced back to Universe 1
+                outCol.assign(getUniverse1(final_dir));
+            });
+            
+            return outCol;
+        });
+
+        // 3. Attach physics to the scene boundary
+        const geometry = new THREE.SphereGeometry(500, 64, 64);
+        const material = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide });
+        
+        material.colorNode = wormholePhysics(
+            cameraPosition, 
+            positionWorld.sub(cameraPosition).normalize()
+        );
+
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+
+        // 4. Render loop
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        renderer.setAnimationLoop(() => {
+            controls.update();
+            renderer.render(scene, camera);
+        });
+    </script>
+</body>
+</html>
