@@ -50,8 +50,11 @@ const ATMOSPHERE_LIGHT_SAMPLES = 10
 const ATMOSPHERE_VISUAL_THICKNESS_BOOST = 1.7
 
 const CAMERA_FOV = 40
-const CAMERA_NEAR = 0.06
-const CAMERA_FAR = 520000
+const CAMERA_NEAR = 12
+const CAMERA_FAR = 360000
+const SHIP_REFERENCE_FRAMING_DISTANCE_METERS = 500
+const SHIP_RENDER_DISTANCE_METERS = 14000
+const SHIP_DISTANCE_COMPENSATION_SCALE = SHIP_RENDER_DISTANCE_METERS / SHIP_REFERENCE_FRAMING_DISTANCE_METERS
 
 const SUN_DIRECTION = new THREE.Vector3(-0.86, 0.18, 0.47).normalize()
 
@@ -816,6 +819,7 @@ function createDockedEndurance() {
 
   endurance.scale.setScalar(WORLD_UNITS_PER_METER)
   docked.add(endurance)
+  docked.scale.setScalar(SHIP_DISTANCE_COMPENSATION_SCALE)
 
   docked.rotation.set(0.62, -0.12, 0.94)
   return { docked }
@@ -994,9 +998,9 @@ export default {
         camera.position.copy(state.cameraBasePosition)
 
         const flybyT = state.flybyProgress * 2 - 1
-        const lateralOffset = flybyT * metersToWorld(1700)
-        const verticalOffset = metersToWorld(-40)
-        const forwardOffset = metersToWorld(500)
+        const lateralOffset = flybyT * metersToWorld(1700 * SHIP_DISTANCE_COMPENSATION_SCALE)
+        const verticalOffset = metersToWorld(-40 * SHIP_DISTANCE_COMPENSATION_SCALE)
+        const forwardOffset = metersToWorld(SHIP_RENDER_DISTANCE_METERS)
 
         dockedEndurance.position.copy(state.cameraBasePosition)
         dockedEndurance.position.addScaledVector(state.cameraForward, forwardOffset)
