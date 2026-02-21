@@ -44,7 +44,7 @@ const MAX_GROUND_ARC_DISTANCE = 2200 * WORLD_UNITS_PER_KM
 const COAST_GROUND_TRACK_RATE = 4.2 * WORLD_UNITS_PER_KM
 const MAX_CROSSRANGE_OFFSET = 26 * WORLD_UNITS_PER_KM
 const COAST_CROSSRANGE_RATE = 0.14 * WORLD_UNITS_PER_KM
-const ENDURANCE_CROSSRANGE_OFFSET = 0.46 * WORLD_UNITS_PER_KM
+const ENDURANCE_FORWARD_OFFSET = 0.62 * WORLD_UNITS_PER_KM
 const ENDURANCE_ALTITUDE = 420 * WORLD_UNITS_PER_KM
 const ENDURANCE_GROUND_ARC_DISTANCE = 2224 * WORLD_UNITS_PER_KM
 const ENDURANCE_MODEL_SCALE_METERS = 1.35
@@ -57,6 +57,9 @@ const ASCENT_SLOW_DISTANCE_FRACTION = 0.00035
 const ATMOSPHERE_POST_PATH_FADE_NEAR_WORLD = 0.35
 const ATMOSPHERE_POST_STRENGTH = 0.14
 const ATMOSPHERE_SHELL_FACE_TRANSITION_MIN_KM = 32
+const ATMOSPHERE_SHELL_FACE_TRANSITION_HEIGHT_FRACTION = 0.34
+const ATMOSPHERE_OPACITY_RAMP_END_ALTITUDE = EARTH_ATMOSPHERE_HEIGHT
+const ATMOSPHERE_MAX_SHELL_OPACITY = 1
 const DEFAULT_AIRLIGHT = new THREE.Color(0x7fa8d4)
 const ATMOSPHERE_SUN_DIRECTION = new THREE.Vector3(0.83, 0.34, -0.45).normalize()
 const LAUNCH_SITE_LATITUDE_DEG = 28.573
@@ -70,6 +73,18 @@ const STAGE_ONE_SEPARATION_SECONDS = 13.2
 const COAST_LINEAR_SECONDS = 1.2
 const TERMINAL_DECEL_SECONDS = 4.0
 const END_SEQUENCE_LAUNCH_TIME = ASCENT_SECONDS + COAST_LINEAR_SECONDS + TERMINAL_DECEL_SECONDS
+const STAGE_TWO_SEPARATION_DELAY_SECONDS = 0.0
+const STAGE_TWO_SEPARATION_LATERAL_SPEED_MPS = 6.2
+const STAGE_TWO_SEPARATION_BACK_SPEED_MPS = 5.4
+const STAGE_TWO_SEPARATION_DOWN_SPEED_MPS = 2.0
+const STAGE_TWO_SEPARATION_OPEN_ANGULAR_VEL_RAD_PER_SEC = 0.85
+const STAGE_TWO_SEPARATION_SPRING_SECONDS = 0.7
+const STAGE_TWO_SEPARATION_SPRING_LATERAL_ACCEL_MPS2 = 10.0
+const STAGE_TWO_SEPARATION_SPRING_BACK_ACCEL_MPS2 = 5.2
+const STAGE_TWO_SEPARATION_SPRING_ANGULAR_ACCEL_RAD_PER_SEC2 = 1.9
+const STAGE_TWO_DEBRIS_LINEAR_DRAG_PER_SEC = 0.02
+const STAGE_TWO_DEBRIS_ANGULAR_DRAG_PER_SEC = 0.035
+const EARTH_GRAVITATIONAL_PARAMETER_KM3_S2 = 398600.4418
 const DETACH_PIVOT_DELAY_SECONDS = 0.72
 const DETACH_KICK_PHASE_SECONDS = 0.65
 const DETACH_INITIAL_ALONG_OFFSET = -3.4 * WORLD_UNITS_PER_METER
@@ -110,6 +125,8 @@ const TMP_VEC3_F = new THREE.Vector3()
 const TMP_VEC3_G = new THREE.Vector3()
 const TMP_QUAT_A = new THREE.Quaternion()
 const TMP_QUAT_B = new THREE.Quaternion()
+const TMP_DEBRIS_R = new THREE.Vector3()
+const TMP_DEBRIS_AXIS = new THREE.Vector3()
 const TMP_AP_DIR = new THREE.Vector3()
 const TMP_AP_OC = new THREE.Vector3()
 const TMP_AP_SEG_START = new THREE.Vector3()
@@ -981,27 +998,234 @@ function createRocket() {
   upperStage.position.y = 62
   group.add(upperStage)
 
-  const stageTwoBody = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.4, 31, 28), bodyWhite)
-  stageTwoBody.position.y = 15.5
-  stageTwoBody.castShadow = true
-  upperStage.add(stageTwoBody)
+  const rangerPayload = new THREE.Group()
+  rangerPayload.name = 'scene05-ranger-payload'
+  rangerPayload.position.y = 41.0
+  rangerPayload.visible = false
 
-  const stageTwoBand = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 3.15, 3.2, 24), panelDark)
-  stageTwoBand.position.y = 8
-  upperStage.add(stageTwoBand)
+  const rangerHull = bodyWhite.clone()
+  rangerHull.metalness = 0.22
+  rangerHull.roughness = 0.5
 
-  const stageTwoAdapter = new THREE.Mesh(new THREE.CylinderGeometry(2.55, 3.0, 6.2, 24), alloy)
-  stageTwoAdapter.position.y = 34
-  upperStage.add(stageTwoAdapter)
+  const rangerFrame = panelDark.clone()
+  rangerFrame.metalness = 0.38
+  rangerFrame.roughness = 0.42
 
-  const rangerSection = new THREE.Mesh(new THREE.CapsuleGeometry(2.05, 5.2, 10, 18), bodyWhite)
-  rangerSection.position.y = 40.5
-  rangerSection.castShadow = true
-  upperStage.add(rangerSection)
+  const rangerGlass = new THREE.MeshStandardMaterial({
+    color: 0x243249,
+    metalness: 0.35,
+    roughness: 0.18,
+    transparent: true,
+    opacity: 0.82,
+  })
+  // Prevent canopy sorting/depth artifacts against the cockpit/hull.
+  rangerGlass.depthWrite = false
+  rangerGlass.polygonOffset = true
+  rangerGlass.polygonOffsetFactor = -2
+  rangerGlass.polygonOffsetUnits = -2
 
-  const noseCone = new THREE.Mesh(new THREE.ConeGeometry(2.5, 12.5, 24), bodyWhite)
-  noseCone.position.y = 49.2
-  upperStage.add(noseCone)
+  const rangerBodyOutline = [
+    new THREE.Vector2(0.0, 5.0),
+    new THREE.Vector2(0.65, 4.25),
+    new THREE.Vector2(2.3, 2.85),
+    new THREE.Vector2(3.7, -0.6),
+    new THREE.Vector2(3.1, -2.3),
+    new THREE.Vector2(1.55, -5.05),
+    new THREE.Vector2(0.7, -4.55),
+    new THREE.Vector2(0.0, -4.2),
+    new THREE.Vector2(-0.7, -4.55),
+    new THREE.Vector2(-1.55, -5.05),
+    new THREE.Vector2(-3.1, -2.3),
+    new THREE.Vector2(-3.7, -0.6),
+    new THREE.Vector2(-2.3, 2.85),
+    new THREE.Vector2(-0.65, 4.25),
+  ]
+
+  const rangerBodyThickness = 0.58
+  const rangerBodyShape = new THREE.Shape(rangerBodyOutline)
+  const rangerBodyGeometry = new THREE.ExtrudeGeometry(rangerBodyShape, {
+    depth: rangerBodyThickness,
+    bevelEnabled: false,
+  })
+  rangerBodyGeometry.translate(0, 0, -rangerBodyThickness * 0.5)
+
+  const rangerBody = new THREE.Mesh(rangerBodyGeometry, rangerHull)
+  rangerBody.castShadow = true
+  rangerPayload.add(rangerBody)
+
+  const outerOutline = rangerBodyOutline.map((p) => new THREE.Vector2(p.x * 1.07, p.y * 1.03))
+  const innerOutline = rangerBodyOutline.map((p) => new THREE.Vector2(p.x * 0.91, p.y * 0.95))
+  const rangerFrameShape = new THREE.Shape(outerOutline)
+  rangerFrameShape.holes.push(new THREE.Path(innerOutline))
+
+  // Keep the frame as a trim layer (not an intersecting solid) to avoid z-fighting.
+  const frameDepth = 0.1
+  const frameGap = 0.05
+  const rangerFrameGeometry = new THREE.ExtrudeGeometry(rangerFrameShape, {
+    depth: frameDepth,
+    bevelEnabled: false,
+  })
+  rangerFrameGeometry.translate(0, 0, -frameDepth * 0.5)
+
+  const frameTopZ = rangerBodyThickness * 0.5 + frameDepth * 0.5 + frameGap
+  const rangerOuterFrameTop = new THREE.Mesh(rangerFrameGeometry, rangerFrame)
+  rangerOuterFrameTop.position.z = frameTopZ
+  rangerOuterFrameTop.castShadow = true
+  rangerPayload.add(rangerOuterFrameTop)
+
+  const rangerOuterFrameBottom = new THREE.Mesh(rangerFrameGeometry, rangerFrame)
+  rangerOuterFrameBottom.position.z = -frameTopZ
+  rangerOuterFrameBottom.castShadow = true
+  rangerPayload.add(rangerOuterFrameBottom)
+
+  const cockpitOutline = [
+    new THREE.Vector2(0.0, 3.85),
+    new THREE.Vector2(0.95, 3.3),
+    new THREE.Vector2(1.2, 2.05),
+    new THREE.Vector2(0.75, 0.85),
+    new THREE.Vector2(0.0, 0.5),
+    new THREE.Vector2(-0.75, 0.85),
+    new THREE.Vector2(-1.2, 2.05),
+    new THREE.Vector2(-0.95, 3.3),
+  ]
+  const cockpitThickness = 0.22
+  const cockpitShape = new THREE.Shape(cockpitOutline)
+  const cockpitGeometry = new THREE.ExtrudeGeometry(cockpitShape, {
+    depth: cockpitThickness,
+    bevelEnabled: false,
+  })
+  cockpitGeometry.translate(0, 0, -cockpitThickness * 0.5)
+  const cockpitHump = new THREE.Mesh(cockpitGeometry, rangerHull)
+  cockpitHump.position.set(0, 0.2, rangerBodyThickness * 0.5 + cockpitThickness * 0.5 + 0.05)
+  cockpitHump.castShadow = true
+  rangerPayload.add(cockpitHump)
+
+  const canopyZ = rangerBodyThickness * 0.5 + cockpitThickness + 0.11
+  // Single canopy mesh avoids overlapping transparent planes (sorting/z-fighting).
+  const canopyOutline = [
+    new THREE.Vector2(0.0, 1.45),
+    new THREE.Vector2(0.95, 1.12),
+    new THREE.Vector2(1.25, 0.25),
+    new THREE.Vector2(1.02, -0.9),
+    new THREE.Vector2(0.0, -1.25),
+    new THREE.Vector2(-1.02, -0.9),
+    new THREE.Vector2(-1.25, 0.25),
+    new THREE.Vector2(-0.95, 1.12),
+  ]
+  const canopyShape = new THREE.Shape(canopyOutline)
+  const canopyGeometry = new THREE.ShapeGeometry(canopyShape, 8)
+  const canopy = new THREE.Mesh(canopyGeometry, rangerGlass)
+  canopy.position.set(0, 2.35, canopyZ)
+  canopy.renderOrder = 10
+  rangerPayload.add(canopy)
+
+  const wingSparLeft = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.9, 0.22), rangerFrame)
+  wingSparLeft.position.set(2.8, -0.8, frameTopZ + frameDepth * 0.5 + 0.11 + 0.03)
+  wingSparLeft.rotation.z = THREE.MathUtils.degToRad(-14)
+  rangerPayload.add(wingSparLeft)
+
+  const wingSparRight = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.9, 0.22), rangerFrame)
+  wingSparRight.position.set(-2.8, -0.8, frameTopZ + frameDepth * 0.5 + 0.11 + 0.03)
+  wingSparRight.rotation.z = THREE.MathUtils.degToRad(14)
+  rangerPayload.add(wingSparRight)
+
+  const aftBlock = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.35, 0.6), rangerFrame)
+  aftBlock.position.set(0, -4.25, -(rangerBodyThickness * 0.5 + 0.3 + 0.14))
+  rangerPayload.add(aftBlock)
+
+  const enginePodLeft = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.9, 0.45), alloy)
+  enginePodLeft.position.set(0.65, -4.95, -(rangerBodyThickness * 0.5 + 0.225 + 0.16))
+  rangerPayload.add(enginePodLeft)
+
+  const enginePodRight = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.9, 0.45), alloy)
+  enginePodRight.position.set(-0.65, -4.95, -(rangerBodyThickness * 0.5 + 0.225 + 0.16))
+  rangerPayload.add(enginePodRight)
+
+  rangerPayload.rotation.set(THREE.MathUtils.degToRad(4), 0, 0)
+  upperStage.add(rangerPayload)
+
+  const stageTwoBodyMaterial = bodyWhite.clone()
+  stageTwoBodyMaterial.side = THREE.DoubleSide
+  const stageTwoBandMaterial = panelDark.clone()
+  stageTwoBandMaterial.side = THREE.DoubleSide
+  const stageTwoAlloyMaterial = alloy.clone()
+  stageTwoAlloyMaterial.side = THREE.DoubleSide
+
+  const stageTwoFragmentsGroup = new THREE.Group()
+  stageTwoFragmentsGroup.name = 'scene05-stage-two-fairing-fragments'
+  upperStage.add(stageTwoFragmentsGroup)
+
+  const stageTwoFragments = []
+  for (let i = 0; i < 2; i += 1) {
+    const sideSign = i === 0 ? -1 : 1
+    const thetaStart = sideSign > 0 ? -Math.PI * 0.5 : Math.PI * 0.5
+    const fragment = new THREE.Group()
+    fragment.userData.sideSign = sideSign
+
+    const stageTwoBodyFragment = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.0, 3.4, 31, 28, 1, true, thetaStart, Math.PI),
+      stageTwoBodyMaterial,
+    )
+    stageTwoBodyFragment.position.y = 15.5
+    stageTwoBodyFragment.castShadow = true
+    fragment.add(stageTwoBodyFragment)
+
+    const stageTwoBandFragment = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.15, 3.15, 3.2, 24, 1, true, thetaStart, Math.PI),
+      stageTwoBandMaterial,
+    )
+    stageTwoBandFragment.position.y = 8
+    stageTwoBandFragment.castShadow = true
+    fragment.add(stageTwoBandFragment)
+
+    const adapterFragment = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.55, 3.0, 6.2, 24, 1, true, thetaStart, Math.PI),
+      stageTwoAlloyMaterial,
+    )
+    adapterFragment.position.y = 34
+    adapterFragment.castShadow = true
+    fragment.add(adapterFragment)
+
+    const rangerSectionFragment = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.06, 2.06, 9.3, 24, 1, true, thetaStart, Math.PI),
+      stageTwoBodyMaterial,
+    )
+    rangerSectionFragment.position.y = 40.5
+    rangerSectionFragment.castShadow = true
+    fragment.add(rangerSectionFragment)
+
+    const noseFragment = new THREE.Mesh(
+      new THREE.ConeGeometry(2.5, 12.5, 24, 1, true, thetaStart, Math.PI),
+      stageTwoBodyMaterial,
+    )
+    noseFragment.position.y = 49.2
+    noseFragment.castShadow = true
+    fragment.add(noseFragment)
+
+    const nozzleFragment = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.95, 1.5, 3.8, 18, 1, false, thetaStart, Math.PI),
+      stageTwoAlloyMaterial,
+    )
+    nozzleFragment.position.y = -0.25
+    nozzleFragment.castShadow = true
+    fragment.add(nozzleFragment)
+
+    const rearOuterRadius = 3.42
+    const rearInnerRadius = 1.32
+    const rearLidFragment = new THREE.Mesh(
+      new THREE.RingGeometry(rearInnerRadius, rearOuterRadius, 36, 1, thetaStart, Math.PI),
+      stageTwoBodyMaterial,
+    )
+    rearLidFragment.rotation.x = -Math.PI / 2
+    rearLidFragment.position.y = 0.0
+    rearLidFragment.castShadow = true
+    fragment.add(rearLidFragment)
+
+    fragment.position.set(0, 0, 0)
+    fragment.rotation.set(0, 0, 0)
+    stageTwoFragments.push(fragment)
+    stageTwoFragmentsGroup.add(fragment)
+  }
 
   const stageOneNozzles = []
   const nozzleGeometry = new THREE.CylinderGeometry(1.35, 2.1, 4.8, 20)
@@ -1016,9 +1240,6 @@ function createRocket() {
     stageOneNozzles.push(new THREE.Vector3(x, -1.4, z))
   }
 
-  const stageTwoNozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.5, 3.8, 18), alloy)
-  stageTwoNozzle.position.y = -0.25
-  upperStage.add(stageTwoNozzle)
   const stageTwoNozzles = [new THREE.Vector3(0, 60.25, 0)]
 
   const stageOnePlumeGroup = new THREE.Group()
@@ -1141,6 +1362,8 @@ function createRocket() {
     setStageTwoPlume,
     stageTwoNozzles,
     upperStage,
+    rangerPayload,
+    stageTwoFragments,
   }
 }
 
@@ -1308,6 +1531,7 @@ export default {
     let movementKeyBlockHandler = null
     let mouseOrbitHandler = null
     let hiddenExternalPointClouds = []
+    let stageTwoDebrisBodies = []
     const sceneBackground = new THREE.Color()
 
     const state = {
@@ -1335,6 +1559,8 @@ export default {
       detachedTimer: 0,
       centerTransition01: 0,
       enduranceSpinAngle: 0,
+      stageTwoSeparated: false,
+      stageTwoSeparationTimer: 0,
     }
 
     function getRocketGeometryCenter(target, delta) {
@@ -1542,6 +1768,121 @@ export default {
       }
     }
 
+    function detachStageTwo() {
+      if (state.stageTwoSeparated || !rocket?.stageTwoFragments?.length) {
+        return
+      }
+
+      state.stageTwoSeparated = true
+      stageTwoDebrisBodies = []
+
+      rocket.rangerPayload.visible = true
+
+      TMP_VEC3_A.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
+      TMP_VEC3_B.set(1, 0, 0).applyQuaternion(rocket.group.quaternion).normalize()
+      TMP_VEC3_C.copy(earth.atmosphereCenter).sub(rocket.group.position).normalize()
+
+      const lateralSpeed = metersToWorld(STAGE_TWO_SEPARATION_LATERAL_SPEED_MPS)
+      const backSpeed = metersToWorld(STAGE_TWO_SEPARATION_BACK_SPEED_MPS)
+      const downSpeed = metersToWorld(STAGE_TWO_SEPARATION_DOWN_SPEED_MPS)
+
+      for (let i = 0; i < rocket.stageTwoFragments.length; i += 1) {
+        const fragment = rocket.stageTwoFragments[i]
+        const sideSign = fragment.userData.sideSign ?? (i === 0 ? -1 : 1)
+
+        fragment.getWorldPosition(TMP_VEC3_D)
+        fragment.getWorldQuaternion(TMP_QUAT_A)
+        fragment.getWorldScale(TMP_VEC3_E)
+
+        if (fragment.parent) {
+          fragment.parent.remove(fragment)
+        }
+        sceneGroup.add(fragment)
+
+        fragment.position.copy(TMP_VEC3_D)
+        fragment.quaternion.copy(TMP_QUAT_A)
+        fragment.scale.copy(TMP_VEC3_E)
+        fragment.frustumCulled = false
+
+        const velocity = new THREE.Vector3()
+        velocity.addScaledVector(TMP_VEC3_B, sideSign * lateralSpeed * THREE.MathUtils.randFloat(0.9, 1.2))
+        velocity.addScaledVector(TMP_VEC3_A, -backSpeed * THREE.MathUtils.randFloat(0.92, 1.15))
+        velocity.addScaledVector(TMP_VEC3_C, downSpeed * THREE.MathUtils.randFloat(0.85, 1.25))
+        velocity.add(new THREE.Vector3(
+          randomSpread(metersToWorld(0.9)),
+          randomSpread(metersToWorld(0.5)),
+          randomSpread(metersToWorld(0.9)),
+        ))
+
+        const angularVelocity = new THREE.Vector3()
+        angularVelocity.addScaledVector(TMP_VEC3_A, sideSign * STAGE_TWO_SEPARATION_OPEN_ANGULAR_VEL_RAD_PER_SEC)
+        angularVelocity.x += randomSpread(0.45)
+        angularVelocity.y += randomSpread(0.25)
+        angularVelocity.z += randomSpread(0.45)
+
+        stageTwoDebrisBodies.push({
+          object: fragment,
+          velocity,
+          angularVelocity,
+          springTimer: STAGE_TWO_SEPARATION_SPRING_SECONDS,
+          springLateralDir: TMP_VEC3_B.clone().multiplyScalar(sideSign),
+          springBackDir: TMP_VEC3_A.clone().negate(),
+          springSpinDir: TMP_VEC3_A.clone().multiplyScalar(sideSign),
+        })
+      }
+    }
+
+    function updateStageTwoDebris(deltaSeconds) {
+      if (!state.stageTwoSeparated || stageTwoDebrisBodies.length === 0) {
+        return
+      }
+
+      const dt = THREE.MathUtils.clamp(deltaSeconds, 0, 0.05)
+      if (dt <= 0) {
+        return
+      }
+
+      const linearDamping = Math.exp(-STAGE_TWO_DEBRIS_LINEAR_DRAG_PER_SEC * dt)
+      const angularDamping = Math.exp(-STAGE_TWO_DEBRIS_ANGULAR_DRAG_PER_SEC * dt)
+      const springLateralAccel = metersToWorld(STAGE_TWO_SEPARATION_SPRING_LATERAL_ACCEL_MPS2)
+      const springBackAccel = metersToWorld(STAGE_TWO_SEPARATION_SPRING_BACK_ACCEL_MPS2)
+      const springAngularAccel = STAGE_TWO_SEPARATION_SPRING_ANGULAR_ACCEL_RAD_PER_SEC2
+
+      for (let i = 0; i < stageTwoDebrisBodies.length; i += 1) {
+        const body = stageTwoDebrisBodies[i]
+        const object = body.object
+
+        if (body.springTimer > 0) {
+          const springT = clamp01(body.springTimer / STAGE_TWO_SEPARATION_SPRING_SECONDS)
+          const springEase = springT * springT
+          body.velocity.addScaledVector(body.springLateralDir, springLateralAccel * springEase * dt)
+          body.velocity.addScaledVector(body.springBackDir, springBackAccel * springEase * dt)
+          body.angularVelocity.addScaledVector(body.springSpinDir, springAngularAccel * springEase * dt)
+          body.springTimer = Math.max(0, body.springTimer - dt)
+        }
+
+        TMP_DEBRIS_R.copy(object.position).sub(earth.atmosphereCenter)
+        const radiusSq = TMP_DEBRIS_R.lengthSq()
+        if (radiusSq > 1e-5) {
+          const inverseRadius = 1 / Math.sqrt(radiusSq)
+          const inverseRadius3 = inverseRadius * inverseRadius * inverseRadius
+          const gravityScale = -EARTH_GRAVITATIONAL_PARAMETER_KM3_S2 * inverseRadius3
+          body.velocity.addScaledVector(TMP_DEBRIS_R, gravityScale * dt)
+        }
+
+        body.velocity.multiplyScalar(linearDamping)
+        object.position.addScaledVector(body.velocity, dt)
+
+        body.angularVelocity.multiplyScalar(angularDamping)
+        const angularSpeed = body.angularVelocity.length()
+        if (angularSpeed > 1e-6) {
+          TMP_DEBRIS_AXIS.copy(body.angularVelocity).multiplyScalar(1 / angularSpeed)
+          TMP_QUAT_A.setFromAxisAngle(TMP_DEBRIS_AXIS, angularSpeed * dt)
+          object.quaternion.multiply(TMP_QUAT_A)
+        }
+      }
+    }
+
     function collectEngineEmitters() {
       const nozzles = state.stageOneDetached ? rocket.stageTwoNozzles : rocket.stageOneNozzles
       const emitters = []
@@ -1595,23 +1936,29 @@ export default {
       }
     }
 
-    function updateEarthAtmosphereShell(camera) {
+    function updateEarthAtmosphereShell(camera, altitude) {
       if (!earth || !earth.atmosphereShellOpacity || !earth.atmosphereFrontFaceOpacity || !earth.atmosphereBackFaceOpacity) {
         return
       }
 
       const cameraDistance = camera.position.distanceTo(earth.atmosphereCenter)
+      const launchAltitude = Math.max(0, altitude ?? 0)
       const altitudeFromTop = cameraDistance - EARTH_SHELL_RADIUS
       const kmToWorld = WORLD_UNITS_PER_KM
       const faceBlendBand = Math.max(
         ATMOSPHERE_SHELL_FACE_TRANSITION_MIN_KM * kmToWorld,
-        EARTH_ATMOSPHERE_HEIGHT * 0.18,
+        EARTH_ATMOSPHERE_HEIGHT * ATMOSPHERE_SHELL_FACE_TRANSITION_HEIGHT_FRACTION,
       )
       const insideBlend = 1 - THREE.MathUtils.smoothstep(altitudeFromTop, -faceBlendBand, faceBlendBand)
+      const shellOpacity = THREE.MathUtils.clamp(
+        smoothstepRange(0, ATMOSPHERE_OPACITY_RAMP_END_ALTITUDE, launchAltitude) * ATMOSPHERE_MAX_SHELL_OPACITY,
+        0,
+        ATMOSPHERE_MAX_SHELL_OPACITY,
+      )
 
       earth.atmosphereFrontFaceOpacity.value = THREE.MathUtils.clamp(1 - insideBlend, 0, 1)
       earth.atmosphereBackFaceOpacity.value = THREE.MathUtils.clamp(insideBlend, 0, 1)
-      earth.atmosphereShellOpacity.value = 1
+      earth.atmosphereShellOpacity.value = shellOpacity
     }
 
     function updateEnduranceAtmosphereFade(camera) {
@@ -1735,13 +2082,23 @@ export default {
 
         const previewSequenceTime = IGNITION_HOLD_SECONDS + END_SEQUENCE_LAUNCH_TIME
         setRocketTransform(previewSequenceTime)
+        TMP_VEC3_E.copy(rocket.group.position)
+        // Estimate downrange "forward" so Endurance can be positioned ahead of the payload.
+        setRocketTransform(previewSequenceTime + 0.12)
+        TMP_VEC3_F.copy(rocket.group.position)
+        TMP_VEC3_C.copy(TMP_VEC3_F).sub(TMP_VEC3_E)
+        if (TMP_VEC3_C.lengthSq() < 1e-8) {
+          TMP_VEC3_C.set(0, 0, -1)
+        }
+        TMP_VEC3_C.normalize()
+
+        setRocketTransform(previewSequenceTime)
         getRocketGeometryCenter(TMP_VEC3_A, 0)
         TMP_VEC3_B.set(0, 1, 0).applyQuaternion(rocket.group.quaternion).normalize()
-        TMP_VEC3_C.set(1, 0, 0).applyQuaternion(rocket.group.quaternion).normalize()
         TMP_VEC3_D.copy(TMP_VEC3_A).sub(earth.atmosphereCenter).normalize()
 
         endurance.group.position.copy(TMP_VEC3_A)
-        endurance.group.position.addScaledVector(TMP_VEC3_C, ENDURANCE_CROSSRANGE_OFFSET)
+        endurance.group.position.addScaledVector(TMP_VEC3_C, ENDURANCE_FORWARD_OFFSET)
         endurance.group.position.addScaledVector(TMP_VEC3_B, ENDURANCE_UP_OFFSET)
         endurance.group.position.addScaledVector(TMP_VEC3_D, ENDURANCE_RADIAL_OFFSET)
         endurance.group.rotation.set(0.46, -0.12, 0.9)
@@ -1812,6 +2169,17 @@ export default {
           exhaust.points.visible = false
           rocket.setStageOnePlume(0)
           rocket.setStageTwoPlume(0)
+          state.stageTwoSeparationTimer = 0
+        }
+
+        if (state.sequenceComplete && !state.stageTwoSeparated) {
+          state.stageTwoSeparationTimer += safeDelta
+          if (state.stageTwoSeparationTimer >= STAGE_TWO_SEPARATION_DELAY_SECONDS) {
+            detachStageTwo()
+          }
+        }
+        if (state.stageTwoSeparated) {
+          updateStageTwoDebris(safeDelta)
         }
 
         if (state.sequenceComplete) {
@@ -1837,10 +2205,10 @@ export default {
         }
         state.separationShock = Math.max(0, state.separationShock - safeDelta * 1.85)
 
-        updateEarthAtmosphereShell(camera)
+      updateEarthAtmosphereShell(camera, altitude)
 
-        const stageTwoBlend = smoothstepRange(STAGE_ONE_SEPARATION_SECONDS, STAGE_ONE_SEPARATION_SECONDS + 2.5, trajectory.launchTime)
-        const velocityBoost = THREE.MathUtils.lerp(0.8, 1.2, velocity01)
+      const stageTwoBlend = smoothstepRange(STAGE_ONE_SEPARATION_SECONDS, STAGE_ONE_SEPARATION_SECONDS + 2.5, trajectory.launchTime)
+      const velocityBoost = THREE.MathUtils.lerp(0.8, 1.2, velocity01)
         const activeThrust = state.stageOneDetached
           ? THREE.MathUtils.lerp(0.52, 0.86, stageTwoBlend) * velocityBoost
           : ignitionBlend * THREE.MathUtils.lerp(0.75, 1.05, velocity01)
@@ -1925,8 +2293,8 @@ export default {
           ),
         )
 
-        updateCamera(camera, safeDelta, sequenceTime, ascentProgress, trajectory.launchTime)
-      },
+      updateCamera(camera, safeDelta, sequenceTime, ascentProgress, trajectory.launchTime)
+    },
 
       resize() {},
 
