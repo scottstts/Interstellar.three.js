@@ -9,6 +9,7 @@ const CYLINDER_SEGMENTS = 128
 const LENGTH_SEGMENTS = 64
 const HOUSE_NEIGHBORHOOD_CLUSTER_COUNT = 60
 const REFERENCE_SKY_COLOR = 0xd4cebd
+const STATION_SPIN_SPEED = 0.03
 const CAMERA_INIT_POSITION = new THREE.Vector3(0, -600, -STATION_BASE_LENGTH * 0.35)
 const CAMERA_INIT_LOOK_AT = new THREE.Vector3(0, -800, 0)
 
@@ -34,6 +35,7 @@ export default {
     let previousBackground = null
     let previousToneMappingExposure = null
     let previousCameraProjection = null
+    let stationSpinAngle = 0
 
         // -- Canvas texture helpers --
         function createCanvasTexture(w, h, drawFn) {
@@ -1239,6 +1241,7 @@ export default {
         sceneGroup = new THREE.Group()
         sceneGroup.name = 'cooper-station-group'
         sceneGroup.position.z = STATION_EXTENSION_OFFSET_Z
+        sceneGroup.rotation.z = stationSpinAngle
         rootRef.add(sceneGroup)
 
         previousFog = sceneRef.fog
@@ -1270,9 +1273,15 @@ export default {
         buildScene()
       },
 
-      update() {
+      update({ delta } = {}) {
         if (!cameraRef) {
           return
+        }
+
+        const safeDelta = Math.min(Math.max(delta ?? 1 / 60, 0), 0.05)
+        stationSpinAngle = (stationSpinAngle + safeDelta * STATION_SPIN_SPEED) % (Math.PI * 2)
+        if (sceneGroup) {
+          sceneGroup.rotation.z = stationSpinAngle
         }
 
         cameraRef.position.copy(CAMERA_INIT_POSITION)
@@ -1313,6 +1322,7 @@ export default {
         previousBackground = null
         previousToneMappingExposure = null
         previousCameraProjection = null
+        stationSpinAngle = 0
       },
     }
   },
