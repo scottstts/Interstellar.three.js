@@ -43,8 +43,8 @@ const STAR_COLOR = new THREE.Color(0xffffff)
 const SUN_DIRECTION = new THREE.Vector3(0.88, 0.2, 0.43).normalize()
 
 const CAMERA_FOV = 46
-const CAMERA_NEAR = 10
-const CAMERA_FAR = 260000
+const CAMERA_NEAR = 35
+const CAMERA_FAR = 90000
 const CAMERA_ORBIT_ALTITUDE_KM = 940
 
 const ATMOSPHERE_VIEW_SAMPLES = 18
@@ -56,7 +56,7 @@ const ENDURANCE_OFFSET_RIGHT = 56
 const ENDURANCE_OFFSET_UP = -8
 const RANGER_OFFSET_RIGHT = -96
 const RANGER_OFFSET_UP = 6
-const RANGER_OFFSET_FORWARD = 188
+const RANGER_OFFSET_FORWARD = -188
 const ENDURANCE_SPIN_RATE = 3.15
 const RANGER_SPIN_UP_DURATION = 6.5
 const RANGER_APPROACH_START = 4.0
@@ -93,6 +93,29 @@ function integrateSpringVector(current, velocity, target, delta, stiffness, damp
   TMP_VEC3_G.addScaledVector(velocity, -damping)
   velocity.addScaledVector(TMP_VEC3_G, delta)
   current.addScaledVector(velocity, delta)
+}
+
+function applyDepthBias(object3D, factor, units) {
+  object3D.traverse((node) => {
+    if (!node.isMesh || !node.material) {
+      return
+    }
+
+    const applyToMaterial = (material) => {
+      material.polygonOffset = true
+      material.polygonOffsetFactor = factor
+      material.polygonOffsetUnits = units
+      material.needsUpdate = true
+    }
+
+    if (Array.isArray(node.material)) {
+      for (const material of node.material) {
+        applyToMaterial(material)
+      }
+    } else {
+      applyToMaterial(node.material)
+    }
+  })
 }
 
 function createSpaceStars() {
@@ -590,6 +613,9 @@ function createRangerShipWithoutLandingLegs() {
     child.position.sub(center)
   }
 
+  // Small negative depth bias prevents occasional false overdraw by nearby geometry.
+  applyDepthBias(ship, -1, -2)
+
   return ship
 }
 
@@ -1075,8 +1101,8 @@ export default {
     }
 
     function positionCamera(camera) {
-      camera.position.set(6932.902, 4937.368, 6152.122)
-      camera.lookAt(6504.699, 4705.195, 5278.773)
+      camera.position.set(6895.770, 4931.842, 6170.045)
+      camera.lookAt(6480.178, 4737.868, 5281.418)
     }
 
     function updateAtmosphereCenterUniform() {
