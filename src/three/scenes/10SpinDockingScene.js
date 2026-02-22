@@ -69,6 +69,15 @@ const RANGER_DOCK_CLEARANCE = 4.1
 const RANGER_DOCK_RADIAL_OFFSET = 0.35
 const ENDURANCE_DOCK_PORT_LOCAL = new THREE.Vector3(0, 0, 1.5)
 const LOCAL_FORWARD_Z = new THREE.Vector3(0, 0, 1)
+const MOVEMENT_KEY_CODES = new Set([
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'Space',
+  'ShiftLeft',
+  'ShiftRight',
+])
 
 const TMP_VEC3_A = new THREE.Vector3()
 const TMP_VEC3_B = new THREE.Vector3()
@@ -1077,6 +1086,8 @@ export default {
     let rangerShip = null
     let sunLight = null
     let fillLight = null
+    let movementKeyBlockHandler = null
+    let cameraLockedPosition = null
 
     let savedCameraNear = 0
     let savedCameraFar = 0
@@ -1267,7 +1278,7 @@ export default {
     }
 
     return {
-      init({ camera, root, scene }) {
+      init({ camera, renderer, root, scene }) {
         rootRef = root
         sceneGroup = new THREE.Group()
         sceneGroup.name = 'scene10-group'
@@ -1301,6 +1312,23 @@ export default {
         sceneGroup.add(stars)
 
         positionCamera(camera)
+        cameraLockedPosition = camera.position.clone()
+
+        movementKeyBlockHandler = (event) => {
+          if (!MOVEMENT_KEY_CODES.has(event.code)) {
+            return
+          }
+
+          if (document.pointerLockElement === renderer?.domElement) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation()
+            }
+          }
+        }
+        window.addEventListener('keydown', movementKeyBlockHandler, true)
+        window.addEventListener('keyup', movementKeyBlockHandler, true)
 
         enduranceShip = createDamagedEndurance()
         rangerShip = createRangerShipWithoutLandingLegs()
@@ -1314,6 +1342,10 @@ export default {
           return
         }
 
+        if (cameraLockedPosition) {
+          camera.position.copy(cameraLockedPosition)
+        }
+
         updateAtmosphereCenterUniform()
         animateShipDockingSequence(delta)
 
@@ -1323,6 +1355,12 @@ export default {
       resize() {},
 
       dispose({ camera, scene }) {
+        if (movementKeyBlockHandler) {
+          window.removeEventListener('keydown', movementKeyBlockHandler, true)
+          window.removeEventListener('keyup', movementKeyBlockHandler, true)
+          movementKeyBlockHandler = null
+        }
+
         camera.near = savedCameraNear
         camera.far = savedCameraFar
         camera.fov = savedCameraFov
@@ -1347,6 +1385,7 @@ export default {
         animationState.ready = false
         sunLight = null
         fillLight = null
+        cameraLockedPosition = null
         rootRef = null
       },
     }
