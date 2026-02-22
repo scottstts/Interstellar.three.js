@@ -69,6 +69,27 @@ const RANGER_DOCK_CLEARANCE = 4.1
 const RANGER_DOCK_RADIAL_OFFSET = 0.35
 const ENDURANCE_DOCK_PORT_LOCAL = new THREE.Vector3(0, 0, 1.5)
 const LOCAL_FORWARD_Z = new THREE.Vector3(0, 0, 1)
+const ENDURANCE_DEBRIS_SOURCE_ANGLE = (4.5 / 12) * Math.PI * 2
+const ENDURANCE_DEBRIS_COUNT = 24
+const ENDURANCE_DEBRIS_RADIUS_MIN = 28
+const ENDURANCE_DEBRIS_RADIUS_MAX = 37
+const ENDURANCE_DEBRIS_Z_MIN = -2.6
+const ENDURANCE_DEBRIS_Z_MAX = 2.6
+const ENDURANCE_DEBRIS_ANGLE_SPREAD = 0.95
+const ENDURANCE_DEBRIS_PEEL_DELAY_MIN = 0.2
+const ENDURANCE_DEBRIS_PEEL_DELAY_MAX = 8.8
+const ENDURANCE_DEBRIS_PEEL_DURATION_MIN = 0.45
+const ENDURANCE_DEBRIS_PEEL_DURATION_MAX = 1.25
+const ENDURANCE_DEBRIS_PEEL_DISTANCE_MIN = 0.9
+const ENDURANCE_DEBRIS_PEEL_DISTANCE_MAX = 2.8
+const ENDURANCE_DEBRIS_OUTWARD_SPEED_MIN = 2.2
+const ENDURANCE_DEBRIS_OUTWARD_SPEED_MAX = 8.2
+const ENDURANCE_DEBRIS_AXIAL_SPEED_MAX = 1.8
+const ENDURANCE_DEBRIS_LIFETIME_MIN = 10.5
+const ENDURANCE_DEBRIS_LIFETIME_MAX = 18.5
+const ENDURANCE_DEBRIS_RESPAWN_DELAY_MIN = 1.8
+const ENDURANCE_DEBRIS_RESPAWN_DELAY_MAX = 5.4
+const ENDURANCE_DEBRIS_MAX_SPEED = 95
 const MOVEMENT_KEY_CODES = new Set([
   'KeyW',
   'KeyA',
@@ -85,10 +106,16 @@ const TMP_VEC3_C = new THREE.Vector3()
 const TMP_VEC3_D = new THREE.Vector3()
 const TMP_VEC3_E = new THREE.Vector3()
 const TMP_VEC3_G = new THREE.Vector3()
+const TMP_VEC3_H = new THREE.Vector3()
+const TMP_VEC3_I = new THREE.Vector3()
+const TMP_VEC3_J = new THREE.Vector3()
+const TMP_VEC3_K = new THREE.Vector3()
 const UP_VECTOR = new THREE.Vector3(0, 1, 0)
 const TMP_QUAT_A = new THREE.Quaternion()
 const TMP_QUAT_B = new THREE.Quaternion()
 const TMP_QUAT_C = new THREE.Quaternion()
+const TMP_QUAT_D = new THREE.Quaternion()
+const TMP_QUAT_E = new THREE.Quaternion()
 
 function smoothstepRange(edge0, edge1, value) {
   if (edge0 === edge1) {
@@ -432,7 +459,63 @@ function createDamagedEndurance() {
   dockRing.position.z = 1.5
   endurance.add(dockRing)
 
+  endurance.userData.hullMaterial = matWhiteHull
+
   return endurance
+}
+
+function createEndurancePeelingDebris(hullMaterial) {
+  const group = new THREE.Group()
+  group.name = 'scene10-endurance-peeling-debris'
+
+  const debrisMaterial = hullMaterial ?? createMetalMat(0xdddddd, 0.4, 0.6)
+  const pieces = []
+
+  for (let pieceIndex = 0; pieceIndex < ENDURANCE_DEBRIS_COUNT; pieceIndex += 1) {
+    const sizeSeed = pieceIndex * 13
+    const sizeA = 0.45 + seededRand(sizeSeed + 1) * 1.25
+    const sizeB = 0.35 + seededRand(sizeSeed + 2) * 0.9
+    const sizeC = 0.35 + seededRand(sizeSeed + 3) * 1.05
+    const shapeSelector = seededRand(sizeSeed + 4)
+
+    let geometry = null
+    if (shapeSelector < 0.58) {
+      geometry = new THREE.BoxGeometry(sizeA, sizeB, sizeC)
+    } else if (shapeSelector < 0.86) {
+      geometry = new THREE.CylinderGeometry(sizeA * 0.28, sizeA * 0.55, sizeC, 4, 1)
+    } else {
+      geometry = new THREE.TetrahedronGeometry(sizeA * 0.58, 0)
+    }
+
+    const mesh = new THREE.Mesh(geometry, debrisMaterial)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
+
+    pieces.push({
+      angularVelocity: new THREE.Vector3(),
+      axialSpeed: 0,
+      detachTime: 0,
+      lifetime: 0,
+      localAnchor: new THREE.Vector3(),
+      localBaseQuaternion: new THREE.Quaternion(),
+      localOutward: new THREE.Vector3(),
+      localTangent: new THREE.Vector3(),
+      maxPeelDistance: 0,
+      mesh,
+      outwardSpeed: 0,
+      peelStartTime: 0,
+      peelTwist: 0,
+      released: false,
+      releasedAge: 0,
+      rollRate: 0,
+      spinCarry: 0,
+      tumbleRate: 0,
+      velocity: new THREE.Vector3(),
+    })
+  }
+
+  return { group, pieces }
 }
 
 function proceduralNoise(positionNode, scale) {
@@ -1084,6 +1167,7 @@ export default {
     let planetSystem = null
     let enduranceShip = null
     let rangerShip = null
+    let enduranceDebris = null
     let sunLight = null
     let fillLight = null
     let movementKeyBlockHandler = null
@@ -1182,6 +1266,143 @@ export default {
       animationState.rangerTargetPosition.copy(rangerShip.position)
 
       animationState.ready = true
+    }
+
+    function configureDebrisPieceCycle(piece, cycleStartTime) {
+      const damageAngle = ENDURANCE_DEBRIS_SOURCE_ANGLE + THREE.MathUtils.randFloatSpread(ENDURANCE_DEBRIS_ANGLE_SPREAD)
+      const radialDistance = THREE.MathUtils.randFloat(ENDURANCE_DEBRIS_RADIUS_MIN, ENDURANCE_DEBRIS_RADIUS_MAX)
+      const localZ = THREE.MathUtils.randFloat(ENDURANCE_DEBRIS_Z_MIN, ENDURANCE_DEBRIS_Z_MAX)
+
+      piece.localAnchor.set(
+        Math.cos(damageAngle) * radialDistance,
+        Math.sin(damageAngle) * radialDistance,
+        localZ,
+      )
+
+      piece.localOutward.set(
+        Math.cos(damageAngle),
+        Math.sin(damageAngle),
+        THREE.MathUtils.randFloatSpread(0.14),
+      ).normalize()
+
+      piece.localTangent.crossVectors(LOCAL_FORWARD_Z, piece.localOutward)
+      if (piece.localTangent.lengthSq() < 1e-6) {
+        piece.localTangent.set(1, 0, 0)
+      } else {
+        piece.localTangent.normalize()
+      }
+
+      piece.localBaseQuaternion.setFromEuler(new THREE.Euler(
+        THREE.MathUtils.randFloatSpread(1.15),
+        THREE.MathUtils.randFloatSpread(1.15),
+        THREE.MathUtils.randFloatSpread(1.15),
+      ))
+
+      piece.peelStartTime = cycleStartTime + THREE.MathUtils.randFloat(
+        ENDURANCE_DEBRIS_PEEL_DELAY_MIN,
+        ENDURANCE_DEBRIS_PEEL_DELAY_MAX,
+      )
+      piece.detachTime = piece.peelStartTime + THREE.MathUtils.randFloat(
+        ENDURANCE_DEBRIS_PEEL_DURATION_MIN,
+        ENDURANCE_DEBRIS_PEEL_DURATION_MAX,
+      )
+      piece.maxPeelDistance = THREE.MathUtils.randFloat(
+        ENDURANCE_DEBRIS_PEEL_DISTANCE_MIN,
+        ENDURANCE_DEBRIS_PEEL_DISTANCE_MAX,
+      )
+      piece.peelTwist = THREE.MathUtils.randFloatSpread(1.25)
+      piece.outwardSpeed = THREE.MathUtils.randFloat(
+        ENDURANCE_DEBRIS_OUTWARD_SPEED_MIN,
+        ENDURANCE_DEBRIS_OUTWARD_SPEED_MAX,
+      )
+      piece.axialSpeed = THREE.MathUtils.randFloatSpread(ENDURANCE_DEBRIS_AXIAL_SPEED_MAX)
+      piece.spinCarry = THREE.MathUtils.randFloat(0.28, 0.82)
+      piece.rollRate = THREE.MathUtils.randFloatSpread(2.3)
+      piece.tumbleRate = THREE.MathUtils.randFloatSpread(1.7)
+      piece.lifetime = THREE.MathUtils.randFloat(
+        ENDURANCE_DEBRIS_LIFETIME_MIN,
+        ENDURANCE_DEBRIS_LIFETIME_MAX,
+      )
+      piece.released = false
+      piece.releasedAge = 0
+      piece.velocity.set(0, 0, 0)
+      piece.angularVelocity.set(0, 0, 0)
+    }
+
+    function initializeEnduranceDebrisSimulation() {
+      if (!enduranceDebris) {
+        return
+      }
+
+      for (const piece of enduranceDebris.pieces) {
+        const cycleOffset = -THREE.MathUtils.randFloat(0, 4.5)
+        configureDebrisPieceCycle(piece, cycleOffset)
+      }
+    }
+
+    function updateEnduranceDebrisSimulation(delta) {
+      if (!animationState.ready || !enduranceShip || !enduranceDebris) {
+        return
+      }
+
+      TMP_VEC3_H.copy(LOCAL_FORWARD_Z).applyQuaternion(enduranceShip.quaternion).normalize()
+      TMP_VEC3_I.copy(TMP_VEC3_H).multiplyScalar(animationState.currentEnduranceSpinRate)
+
+      for (const piece of enduranceDebris.pieces) {
+        if (!piece.released) {
+          const peelT = smoothstepRange(piece.peelStartTime, piece.detachTime, animationState.time)
+          const peelDistance = piece.maxPeelDistance * peelT * peelT
+
+          TMP_VEC3_J.copy(piece.localAnchor).addScaledVector(piece.localOutward, peelDistance)
+          TMP_VEC3_K.copy(TMP_VEC3_J).applyQuaternion(enduranceShip.quaternion)
+          piece.mesh.position.copy(enduranceShip.position).add(TMP_VEC3_K)
+
+          TMP_QUAT_D.copy(enduranceShip.quaternion).multiply(piece.localBaseQuaternion)
+          TMP_QUAT_E.setFromAxisAngle(piece.localTangent, piece.peelTwist * peelT)
+          piece.mesh.quaternion.copy(TMP_QUAT_D).multiply(TMP_QUAT_E)
+
+          if (animationState.time >= piece.detachTime) {
+            piece.released = true
+            piece.releasedAge = 0
+
+            TMP_VEC3_D.copy(TMP_VEC3_K)
+            TMP_VEC3_E.crossVectors(TMP_VEC3_I, TMP_VEC3_D)
+            TMP_VEC3_G.copy(piece.localOutward).applyQuaternion(enduranceShip.quaternion).normalize()
+
+            piece.velocity.copy(TMP_VEC3_E)
+            piece.velocity.addScaledVector(TMP_VEC3_G, piece.outwardSpeed)
+            piece.velocity.addScaledVector(TMP_VEC3_H, piece.axialSpeed)
+            if (piece.velocity.length() > ENDURANCE_DEBRIS_MAX_SPEED) {
+              piece.velocity.setLength(ENDURANCE_DEBRIS_MAX_SPEED)
+            }
+
+            piece.angularVelocity.copy(TMP_VEC3_H).multiplyScalar(animationState.currentEnduranceSpinRate * piece.spinCarry)
+            piece.angularVelocity.addScaledVector(TMP_VEC3_G, piece.rollRate)
+            if (piece.velocity.lengthSq() > 1e-6) {
+              TMP_VEC3_A.copy(piece.velocity).normalize()
+              piece.angularVelocity.addScaledVector(TMP_VEC3_A, piece.tumbleRate)
+            }
+          }
+        } else {
+          piece.releasedAge += delta
+          piece.mesh.position.addScaledVector(piece.velocity, delta)
+
+          const angularSpeed = piece.angularVelocity.length()
+          if (angularSpeed > 1e-6) {
+            TMP_VEC3_B.copy(piece.angularVelocity).multiplyScalar(1 / angularSpeed)
+            TMP_QUAT_D.setFromAxisAngle(TMP_VEC3_B, angularSpeed * delta)
+            piece.mesh.quaternion.premultiply(TMP_QUAT_D).normalize()
+          }
+
+          if (piece.releasedAge >= piece.lifetime) {
+            const respawnDelay = THREE.MathUtils.randFloat(
+              ENDURANCE_DEBRIS_RESPAWN_DELAY_MIN,
+              ENDURANCE_DEBRIS_RESPAWN_DELAY_MAX,
+            )
+            configureDebrisPieceCycle(piece, animationState.time + respawnDelay)
+          }
+        }
+      }
     }
 
     function animateShipDockingSequence(delta) {
@@ -1332,9 +1553,12 @@ export default {
 
         enduranceShip = createDamagedEndurance()
         rangerShip = createRangerShipWithoutLandingLegs()
-        sceneGroup.add(enduranceShip, rangerShip)
+        enduranceDebris = createEndurancePeelingDebris(enduranceShip.userData?.hullMaterial)
+        sceneGroup.add(enduranceShip, rangerShip, enduranceDebris.group)
         positionShipsInSceneFrame()
         initializeShipAnimationState()
+        initializeEnduranceDebrisSimulation()
+        updateEnduranceDebrisSimulation(0)
       },
 
       update({ camera, delta }) {
@@ -1348,6 +1572,7 @@ export default {
 
         updateAtmosphereCenterUniform()
         animateShipDockingSequence(delta)
+        updateEnduranceDebrisSimulation(delta)
 
         stars.position.copy(camera.position)
       },
@@ -1382,6 +1607,7 @@ export default {
         planetSystem = null
         enduranceShip = null
         rangerShip = null
+        enduranceDebris = null
         animationState.ready = false
         sunLight = null
         fillLight = null
