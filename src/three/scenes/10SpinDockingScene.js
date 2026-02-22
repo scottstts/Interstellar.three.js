@@ -3,10 +3,12 @@ import {
   abs,
   cameraPosition,
   clamp,
+  color,
   dot,
   exp,
   Fn,
   float,
+  fract,
   frontFacing,
   length,
   Loop,
@@ -18,6 +20,7 @@ import {
   positionLocal,
   positionWorld,
   pow,
+  sin,
   smoothstep,
   sqrt,
   step,
@@ -48,7 +51,49 @@ const ATMOSPHERE_VIEW_SAMPLES = 18
 const ATMOSPHERE_LIGHT_SAMPLES = 10
 const ATMOSPHERE_VISUAL_THICKNESS_BOOST = 1.7
 
+const SHIP_CAMERA_DISTANCE = 340
+const ENDURANCE_OFFSET_RIGHT = 56
+const ENDURANCE_OFFSET_UP = -8
+const RANGER_OFFSET_RIGHT = -96
+const RANGER_OFFSET_UP = 6
+const RANGER_OFFSET_FORWARD = 188
+const ENDURANCE_SPIN_RATE = 3.15
+const RANGER_SPIN_UP_DURATION = 6.5
+const RANGER_APPROACH_START = 4.0
+const RANGER_APPROACH_DURATION = 14.5
+const RANGER_DOCK_SETTLE_DURATION = 3.0
+const RANGER_POST_DOCK_SPINDOWN_DURATION = 3.0
+const RANGER_DOCK_CLEARANCE = 4.1
+const RANGER_DOCK_RADIAL_OFFSET = 0.35
+const ENDURANCE_DOCK_PORT_LOCAL = new THREE.Vector3(0, 0, 1.5)
+const LOCAL_FORWARD_Z = new THREE.Vector3(0, 0, 1)
+
 const TMP_VEC3_A = new THREE.Vector3()
+const TMP_VEC3_B = new THREE.Vector3()
+const TMP_VEC3_C = new THREE.Vector3()
+const TMP_VEC3_D = new THREE.Vector3()
+const TMP_VEC3_E = new THREE.Vector3()
+const TMP_VEC3_G = new THREE.Vector3()
+const UP_VECTOR = new THREE.Vector3(0, 1, 0)
+const TMP_QUAT_A = new THREE.Quaternion()
+const TMP_QUAT_B = new THREE.Quaternion()
+const TMP_QUAT_C = new THREE.Quaternion()
+
+function smoothstepRange(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value < edge0 ? 0 : 1
+  }
+
+  const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+function integrateSpringVector(current, velocity, target, delta, stiffness, damping) {
+  TMP_VEC3_G.copy(target).sub(current).multiplyScalar(stiffness)
+  TMP_VEC3_G.addScaledVector(velocity, -damping)
+  velocity.addScaledVector(TMP_VEC3_G, delta)
+  current.addScaledVector(velocity, delta)
+}
 
 function createSpaceStars() {
   const starCount = 7000
@@ -100,6 +145,452 @@ function createSpaceStars() {
   const stars = new THREE.Points(geometry, material)
   stars.name = 'scene10-space-stars'
   return stars
+}
+
+function createMetalMat(hexColor, roughness, metalness) {
+  const material = new THREE.MeshStandardNodeMaterial()
+  material.colorNode = color(hexColor)
+  material.roughnessNode = float(roughness)
+  material.metalnessNode = float(metalness)
+  return material
+}
+
+function seededRand(seed) {
+  const x = Math.sin(seed + 1) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function buildTornHalfPod({
+  matDarkHull,
+  matSolarPanel,
+  matTornFace,
+  matWhiteHull,
+}) {
+  const group = new THREE.Group()
+
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 5), matWhiteHull)
+  hull.position.set(0, 0, -2.5)
+  hull.castShadow = true
+  hull.receiveShadow = true
+  group.add(hull)
+
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel)
+  panel.position.set(0, 0, -4.6)
+  panel.castShadow = true
+  group.add(panel)
+
+  const detail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 2.5), matDarkHull)
+  detail.position.set(0, 0, -1.25)
+  group.add(detail)
+
+  const nx = 16
+  const ny = 14
+  const xMin = -4.0
+  const xMax = 4.0
+  const yMin = -3.5
+  const yMax = 3.5
+  const verts = []
+  const indexArr = []
+  const vertexIndex = (ix, iy) => ix * (ny + 1) + iy
+
+  for (let ix = 0; ix <= nx; ix += 1) {
+    for (let iy = 0; iy <= ny; iy += 1) {
+      const x = xMin + (ix / nx) * (xMax - xMin)
+      const y = yMin + (iy / ny) * (yMax - yMin)
+      let zOffset = 0.05
+
+      if (ix > 0 && ix < nx && iy > 0 && iy < ny) {
+        const seed = ix * 31 + iy * 17
+        const noise = Math.sin(ix * 2.1 + iy * 1.3) * 1.1
+          + Math.cos(ix * 4.7 - iy * 2.9) * 0.7
+          + (seededRand(seed) - 0.5) * 1.2
+        zOffset = 0.05 + Math.abs(noise)
+      }
+
+      verts.push(x, y, zOffset)
+    }
+  }
+
+  for (let ix = 0; ix < nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      const a = vertexIndex(ix, iy)
+      const b = vertexIndex(ix + 1, iy)
+      const c = vertexIndex(ix + 1, iy + 1)
+      const d = vertexIndex(ix, iy + 1)
+      indexArr.push(a, b, c, a, c, d)
+    }
+  }
+
+  const tornGeo = new THREE.BufferGeometry()
+  tornGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+  tornGeo.setIndex(indexArr)
+  tornGeo.computeVertexNormals()
+
+  const tornFace = new THREE.Mesh(tornGeo, matTornFace)
+  tornFace.castShadow = true
+  group.add(tornFace)
+
+  const numShards = 20
+  for (let shardIndex = 0; shardIndex < numShards; shardIndex += 1) {
+    const t = shardIndex / (numShards - 1)
+    const angle = t * Math.PI * 2
+    const x = Math.cos(angle) * 3.8
+    const y = Math.sin(angle) * 3.3
+
+    const r1 = seededRand(shardIndex * 7)
+    const r2 = seededRand(shardIndex * 7 + 1)
+    const r3 = seededRand(shardIndex * 7 + 2)
+    const r4 = seededRand(shardIndex * 7 + 3)
+
+    const shardW = 0.4 + r1 * 1.5
+    const shardH = 0.3 + r2 * 1.2
+    const shardD = 0.3 + r3 * 1.0
+    const zOffset = 0.1 + r4 * 1.5
+
+    const shard = new THREE.Mesh(new THREE.BoxGeometry(shardW, shardH, shardD), matWhiteHull)
+    shard.position.set(x, y, zOffset)
+    shard.rotation.x = (r1 - 0.5) * 1.5
+    shard.rotation.y = (r2 - 0.5) * 1.5
+    shard.rotation.z = angle + (r3 - 0.5) * 0.5
+    shard.castShadow = true
+    group.add(shard)
+  }
+
+  return group
+}
+
+function createDamagedEndurance() {
+  const endurance = new THREE.Group()
+  endurance.name = 'scene10-endurance-damaged'
+
+  const matWhiteHull = createMetalMat(0xdddddd, 0.4, 0.6)
+  const matDarkHull = createMetalMat(0x333333, 0.5, 0.7)
+  const matSolarPanel = createMetalMat(0x111111, 0.15, 0.9)
+  const matGlossBlack = createMetalMat(0x050505, 0.05, 0.8)
+  const matStump = createMetalMat(0x222222, 0.9, 0.3)
+  const matTornFace = createMetalMat(0x1a1a1a, 0.85, 0.45)
+
+  const ringRadius = 32
+  const moduleCount = 12
+  const idxBlown = 4
+  const idxPartial = 5
+
+  for (let i = 0; i < moduleCount; i += 1) {
+    const angle = (i / moduleCount) * Math.PI * 2
+    const mx = Math.cos(angle) * ringRadius
+    const my = Math.sin(angle) * ringRadius
+
+    if (i === idxBlown) {
+      const stumpGroup = new THREE.Group()
+      const stump = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 1.2), matStump)
+      stump.castShadow = true
+      stumpGroup.add(stump)
+
+      const shards = [
+        { w: 0.8, h: 3.0, d: 0.35, x: 2.4, y: 1.8, z: 0.55, rx: 0.2, rz: 0.3 },
+        { w: 0.5, h: 1.8, d: 0.3, x: -2.1, y: -2.2, z: 0.55, rx: -0.1, rz: -0.2 },
+        { w: 0.9, h: 1.4, d: 0.35, x: 2.7, y: -1.3, z: 0.5, rx: 0.25, rz: 0.35 },
+        { w: 0.4, h: 2.3, d: 0.28, x: -2.9, y: 1.0, z: 0.5, rx: -0.15, rz: -0.28 },
+        { w: 0.7, h: 0.9, d: 0.4, x: 0.3, y: 2.7, z: 0.45, rx: 0.1, rz: 0.18 },
+      ]
+
+      for (const shardDef of shards) {
+        const shard = new THREE.Mesh(
+          new THREE.BoxGeometry(shardDef.w, shardDef.h, shardDef.d),
+          matStump,
+        )
+        shard.position.set(shardDef.x, shardDef.y, shardDef.z)
+        shard.rotation.set(shardDef.rx, 0, shardDef.rz)
+        shard.castShadow = true
+        stumpGroup.add(shard)
+      }
+
+      stumpGroup.position.set(mx, my, 0)
+      stumpGroup.rotation.z = angle + Math.PI / 2
+      stumpGroup.lookAt(0, 0, 0)
+      endurance.add(stumpGroup)
+    } else if (i === idxPartial) {
+      const partialModule = buildTornHalfPod({
+        matDarkHull,
+        matSolarPanel,
+        matTornFace,
+        matWhiteHull,
+      })
+      partialModule.position.set(mx, my, 0)
+      partialModule.rotation.z = angle + Math.PI / 2
+      partialModule.lookAt(0, 0, 0)
+      partialModule.rotateY(Math.PI)
+      endurance.add(partialModule)
+    } else {
+      const modGroup = new THREE.Group()
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 10), matWhiteHull)
+      base.castShadow = true
+      base.receiveShadow = true
+      modGroup.add(base)
+
+      const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel)
+      innerPanel.position.set(0, 0, -4.6)
+      innerPanel.castShadow = true
+      innerPanel.receiveShadow = true
+      modGroup.add(innerPanel)
+
+      const sideDetail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 4), matDarkHull)
+      sideDetail.position.set(0, 0, 1)
+      modGroup.add(sideDetail)
+
+      modGroup.position.set(mx, my, 0)
+      modGroup.rotation.z = angle + Math.PI / 2
+      modGroup.lookAt(0, 0, 0)
+      endurance.add(modGroup)
+    }
+
+    const jointAngle = angle + (Math.PI / moduleCount)
+    const jx = Math.cos(jointAngle) * ringRadius
+    const jy = Math.sin(jointAngle) * ringRadius
+
+    const jointGroup = new THREE.Group()
+    jointGroup.position.set(jx, jy, 0)
+    jointGroup.rotation.z = jointAngle
+
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 9, 32), matWhiteHull)
+    tube.castShadow = true
+    tube.receiveShadow = true
+    jointGroup.add(tube)
+
+    const jointCenter = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 2.5, 32), matWhiteHull)
+    jointGroup.add(jointCenter)
+
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.5, 32), matGlossBlack)
+    port.rotation.z = Math.PI / 2
+    jointGroup.add(port)
+
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32), matDarkHull)
+    rim.rotation.z = Math.PI / 2
+    jointGroup.add(rim)
+
+    endurance.add(jointGroup)
+  }
+
+  const poleLength = ringRadius - 5
+  const poleGroup = new THREE.Group()
+  poleGroup.position.set(0, poleLength / 2 + 2, 0)
+
+  const poleCore = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, poleLength, 32), matWhiteHull)
+  poleCore.castShadow = true
+  poleCore.receiveShadow = true
+  poleGroup.add(poleCore)
+
+  for (let i = -1; i <= 1; i += 1) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 2, 32), matDarkHull)
+    ring.position.y = i * (poleLength / 3)
+    poleGroup.add(ring)
+  }
+  endurance.add(poleGroup)
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3, 32), matWhiteHull)
+  hub.rotation.x = Math.PI / 2
+  hub.castShadow = true
+  hub.receiveShadow = true
+  endurance.add(hub)
+
+  const dockRing = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 16, 64), matDarkHull)
+  dockRing.position.z = 1.5
+  endurance.add(dockRing)
+
+  return endurance
+}
+
+function proceduralNoise(positionNode, scale) {
+  const scaled = positionNode.mul(scale)
+  return fract(sin(dot(scaled, vec3(12.9898, 78.233, 37.719))).mul(43758.5453))
+}
+
+function createRangerHullMaterial() {
+  const material = new THREE.MeshStandardNodeMaterial()
+  const pos = positionLocal
+
+  const scaleX = 0.8
+  const scaleZ = 0.5
+  const gridX = step(0.96, fract(pos.x.mul(scaleX)))
+  const gridZ = step(0.96, fract(pos.z.mul(scaleZ)))
+  const lines = max(gridX, gridZ)
+
+  const wear = proceduralNoise(pos, float(15.0)).mul(0.1)
+  const baseWhite = color(0xeceef0)
+  const dirtyWhite = color(0xd0d5da)
+  const lineColor = color(0x606060)
+
+  let finalColor = mix(baseWhite, dirtyWhite, wear)
+  finalColor = mix(finalColor, lineColor, lines)
+
+  const isNose = step(float(8.2), pos.z)
+  const isRearTop = step(pos.z, float(-4.0)).mul(step(float(0.8), pos.y))
+  const decals = max(isNose, isRearTop.mul(proceduralNoise(pos, float(5.0)).mul(0.5)))
+  finalColor = mix(finalColor, color(0x222222), decals)
+
+  material.colorNode = finalColor
+  material.roughnessNode = float(0.4).add(wear).add(lines.mul(0.4))
+  material.metalnessNode = float(0.15)
+  return material
+}
+
+function createRangerBlackTrimMaterial() {
+  const material = new THREE.MeshStandardNodeMaterial()
+  const wear = proceduralNoise(positionLocal, float(25.0)).mul(0.08)
+  material.colorNode = color(0x151618).add(wear)
+  material.roughnessNode = float(0.85).sub(wear)
+  material.metalnessNode = float(0.3)
+  return material
+}
+
+function createRangerWindowMaterial() {
+  const material = new THREE.MeshStandardNodeMaterial()
+  material.colorNode = color(0x010203)
+  material.roughnessNode = float(0.02)
+  material.metalnessNode = float(0.95)
+  return material
+}
+
+function buildRangerCoreHull() {
+  const shipLength = 18
+  const shipWidth = 8.5
+  const geometry = new THREE.BoxGeometry(1, 1, 1, 16, 4, 32)
+  const position = geometry.attributes.position
+
+  for (let i = 0; i < position.count; i += 1) {
+    const nx = position.getX(i) * 2
+    const ny = position.getY(i) * 2
+    const nz = position.getZ(i) * 2
+    const finalZ = nz * (shipLength / 2)
+
+    let halfWidth = 0
+    if (finalZ < -3) {
+      halfWidth = shipWidth / 2
+    } else if (finalZ < 6) {
+      halfWidth = THREE.MathUtils.lerp(shipWidth / 2, 1.2, (finalZ + 3) / 9)
+    } else {
+      halfWidth = THREE.MathUtils.lerp(1.2, 0.3, (finalZ - 6) / 3)
+    }
+
+    halfWidth *= (1.0 - Math.pow(Math.abs(nz), 4) * 0.05)
+    const finalX = nx * halfWidth
+
+    let finalY = 0
+    if (ny > 0) {
+      if (finalZ < -4) {
+        finalY = 1.0
+      } else if (finalZ < 1) {
+        finalY = THREE.MathUtils.lerp(1.0, 2.2, (finalZ + 4) / 5)
+      } else if (finalZ < 7) {
+        finalY = THREE.MathUtils.lerp(2.2, 0.4, (finalZ - 1) / 6)
+      } else {
+        finalY = THREE.MathUtils.lerp(0.4, 0.1, (finalZ - 7) / 2)
+      }
+
+      const edgeThinness = Math.pow(Math.abs(nx), 1.5)
+      const edgeHeight = THREE.MathUtils.lerp(0.8, 0.1, (finalZ + 9) / 18)
+      finalY = THREE.MathUtils.lerp(finalY, edgeHeight, edgeThinness)
+    } else {
+      finalY = -0.1 + ((finalZ + 9) / 18) * 0.2
+    }
+
+    position.setXYZ(i, finalX, finalY, finalZ)
+  }
+
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function createRangerShipWithoutLandingLegs() {
+  const ship = new THREE.Group()
+  ship.name = 'scene10-ranger'
+
+  const matHull = createRangerHullMaterial()
+  const matBlack = createRangerBlackTrimMaterial()
+  const matGlass = createRangerWindowMaterial()
+
+  ship.add(new THREE.Mesh(buildRangerCoreHull(), matHull))
+
+  const buildSideCowl = (isLeft) => {
+    const cowlGroup = new THREE.Group()
+    const sign = isLeft ? 1 : -1
+
+    const rearArm = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 6.0), matBlack)
+    rearArm.position.set(4.0 * sign, 0.3, -5.0)
+    rearArm.rotation.y = 0.05 * sign
+    cowlGroup.add(rearArm)
+
+    const midArm = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 6.5), matBlack)
+    midArm.position.set(3.0 * sign, 0.2, 0.5)
+    midArm.rotation.y = -0.28 * sign
+    cowlGroup.add(midArm)
+
+    const frontArm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 4.0), matBlack)
+    frontArm.position.set(1.4 * sign, 0.1, 5.0)
+    frontArm.rotation.y = -0.45 * sign
+    cowlGroup.add(frontArm)
+
+    return cowlGroup
+  }
+
+  ship.add(buildSideCowl(true))
+  ship.add(buildSideCowl(false))
+
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 1.4, 1.2), matBlack)
+  tail.position.set(0, 0.4, -8.6)
+  ship.add(tail)
+
+  const mainSlopeAngle = Math.atan2(1.8, 6.0)
+  const placeFlushWindow = (w, h, d, x, z, rotY = 0) => {
+    const nz = z / 9.0
+    let halfWidth = THREE.MathUtils.lerp(4.25, 1.2, (z + 3) / 9)
+    halfWidth *= (1.0 - Math.pow(Math.abs(nz), 4) * 0.05)
+
+    const nx = Math.min(Math.abs(x) / halfWidth, 1.0)
+    const centerY = THREE.MathUtils.lerp(2.2, 0.4, (z - 1) / 6)
+    const edgeThinness = Math.pow(nx, 1.5)
+    const edgeHeight = THREE.MathUtils.lerp(0.8, 0.1, (z + 9) / 18)
+    const finalY = THREE.MathUtils.lerp(centerY, edgeHeight, edgeThinness)
+
+    const nx2 = Math.min((Math.abs(x) + 0.1) / halfWidth, 1.0)
+    const finalY2 = THREE.MathUtils.lerp(centerY, edgeHeight, Math.pow(nx2, 1.5))
+    const rotZ = Math.atan2(finalY2 - finalY, 0.1) * Math.sign(-x)
+
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matGlass)
+    pane.position.set(x, finalY - h / 2 + 0.02, z)
+    pane.rotation.set(mainSlopeAngle, rotY, rotZ)
+    ship.add(pane)
+  }
+
+  placeFlushWindow(0.7, 0.1, 0.8, -0.8, 1.8, -0.1)
+  placeFlushWindow(0.7, 0.1, 0.8, 0.0, 1.8, 0)
+  placeFlushWindow(0.7, 0.1, 0.8, 0.8, 1.8, 0.1)
+  placeFlushWindow(0.9, 0.1, 0.9, -1.0, 3.0, -0.15)
+  placeFlushWindow(0.9, 0.1, 0.9, 0.0, 3.0, 0)
+  placeFlushWindow(0.9, 0.1, 0.9, 1.0, 3.0, 0.15)
+  placeFlushWindow(1.0, 0.1, 1.0, -1.2, 4.2, -0.2)
+  placeFlushWindow(1.0, 0.1, 1.0, 0.0, 4.2, 0)
+  placeFlushWindow(1.0, 0.1, 1.0, 1.2, 4.2, 0.2)
+
+  const roofAngle = -Math.atan2(1.2, 5.0)
+  const placeRoofWindow = (x, z) => {
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 1.0), matGlass)
+    pane.position.set(x, 1.95, z)
+    pane.rotation.set(roofAngle, 0, x > 0 ? -0.1 : 0.1)
+    ship.add(pane)
+  }
+  placeRoofWindow(-0.7, 0.2)
+  placeRoofWindow(0.7, 0.2)
+
+  // Re-center pivot to visual mass center so spin is pure self-rotation.
+  ship.updateMatrixWorld(true)
+  const center = new THREE.Box3().setFromObject(ship).getCenter(new THREE.Vector3())
+  for (const child of ship.children) {
+    child.position.sub(center)
+  }
+
+  return ship
 }
 
 function scaleTriplet(values, factor) {
@@ -554,6 +1045,8 @@ export default {
     let sceneGroup = null
     let stars = null
     let planetSystem = null
+    let enduranceShip = null
+    let rangerShip = null
     let sunLight = null
     let fillLight = null
 
@@ -562,10 +1055,28 @@ export default {
     let savedCameraFov = 0
     let savedBackground = null
 
+    const animationState = {
+      ready: false,
+      time: 0,
+      enduranceSpinAngle: 0,
+      rangerSpinAngle: 0,
+      currentEnduranceSpinRate: ENDURANCE_SPIN_RATE,
+      baseEndurancePosition: new THREE.Vector3(),
+      baseEnduranceQuaternion: new THREE.Quaternion(),
+      rangerInitialPosition: new THREE.Vector3(),
+      approachStarted: false,
+      dockPortWorld: new THREE.Vector3(),
+      dockAxisWorld: new THREE.Vector3(),
+      rangerStartParallel: 0,
+      rangerStartRadial: 0,
+      rangerStartRadialDir: new THREE.Vector3(1, 0, 0),
+      rangerVelocity: new THREE.Vector3(),
+      rangerTargetPosition: new THREE.Vector3(),
+    }
+
     function positionCamera(camera) {
-      const cameraDistance = MANN_PLANET_RADIUS + CAMERA_ORBIT_ALTITUDE_KM
-      camera.position.set(cameraDistance, 220, 640)
-      camera.lookAt(-MANN_PLANET_RADIUS * 0.54, MANN_PLANET_RADIUS * 0.06, -MANN_PLANET_RADIUS * 0.32)
+      camera.position.set(6932.902, 4937.368, 6152.122)
+      camera.lookAt(6504.699, 4705.195, 5278.773)
     }
 
     function updateAtmosphereCenterUniform() {
@@ -575,6 +1086,156 @@ export default {
 
       planetSystem.group.getWorldPosition(TMP_VEC3_A)
       planetSystem.atmosphereCenterWorld.value.copy(TMP_VEC3_A)
+    }
+
+    function updateDockingFrameFromEndurance() {
+      if (!enduranceShip) {
+        return
+      }
+
+      animationState.dockAxisWorld.copy(LOCAL_FORWARD_Z).applyQuaternion(enduranceShip.quaternion).normalize()
+      animationState.dockPortWorld.copy(ENDURANCE_DOCK_PORT_LOCAL).applyQuaternion(enduranceShip.quaternion)
+      animationState.dockPortWorld.add(enduranceShip.position)
+    }
+
+    function positionShipsInCameraShot(camera) {
+      if (!enduranceShip || !rangerShip) {
+        return
+      }
+
+      camera.getWorldDirection(TMP_VEC3_B).normalize()
+      TMP_VEC3_C.crossVectors(TMP_VEC3_B, UP_VECTOR).normalize()
+      TMP_VEC3_D.crossVectors(TMP_VEC3_C, TMP_VEC3_B).normalize()
+
+      TMP_VEC3_E.copy(camera.position).addScaledVector(TMP_VEC3_B, SHIP_CAMERA_DISTANCE)
+
+      enduranceShip.position.copy(TMP_VEC3_E)
+      enduranceShip.position.addScaledVector(TMP_VEC3_C, ENDURANCE_OFFSET_RIGHT)
+      enduranceShip.position.addScaledVector(TMP_VEC3_D, ENDURANCE_OFFSET_UP)
+      enduranceShip.rotation.set(-0.5, -0.3, 0.84)
+
+      rangerShip.position.copy(TMP_VEC3_E)
+      rangerShip.position.addScaledVector(TMP_VEC3_C, RANGER_OFFSET_RIGHT)
+      rangerShip.position.addScaledVector(TMP_VEC3_D, RANGER_OFFSET_UP)
+      rangerShip.position.addScaledVector(TMP_VEC3_B, RANGER_OFFSET_FORWARD)
+      rangerShip.scale.setScalar(1.35)
+    }
+
+    function initializeShipAnimationState() {
+      if (!enduranceShip || !rangerShip) {
+        return
+      }
+
+      animationState.time = 0
+      animationState.enduranceSpinAngle = 0
+      animationState.rangerSpinAngle = 0
+      animationState.currentEnduranceSpinRate = ENDURANCE_SPIN_RATE
+      animationState.approachStarted = false
+      animationState.baseEndurancePosition.copy(enduranceShip.position)
+      animationState.baseEnduranceQuaternion.copy(enduranceShip.quaternion)
+      animationState.rangerInitialPosition.copy(rangerShip.position)
+      animationState.rangerVelocity.set(0, 0, 0)
+
+      updateDockingFrameFromEndurance()
+      TMP_QUAT_B.setFromUnitVectors(UP_VECTOR, TMP_VEC3_E.copy(animationState.dockAxisWorld).negate())
+      rangerShip.quaternion.copy(TMP_QUAT_B)
+
+      animationState.rangerTargetPosition.copy(rangerShip.position)
+
+      animationState.ready = true
+    }
+
+    function animateShipDockingSequence(delta) {
+      if (!animationState.ready || !enduranceShip || !rangerShip) {
+        return
+      }
+
+      animationState.time += delta
+
+      const approachEnd = RANGER_APPROACH_START + RANGER_APPROACH_DURATION
+      const dockEnd = approachEnd + RANGER_DOCK_SETTLE_DURATION
+      const spinDownEnd = dockEnd + RANGER_POST_DOCK_SPINDOWN_DURATION
+
+      const spinUpT = smoothstepRange(0, RANGER_SPIN_UP_DURATION, animationState.time)
+      const rawApproachT = smoothstepRange(RANGER_APPROACH_START, approachEnd, animationState.time)
+      const rawDockT = smoothstepRange(approachEnd, dockEnd, animationState.time)
+      const spinDownT = smoothstepRange(dockEnd, spinDownEnd, animationState.time)
+
+      animationState.currentEnduranceSpinRate = THREE.MathUtils.lerp(ENDURANCE_SPIN_RATE, 0, spinDownT)
+      animationState.enduranceSpinAngle += animationState.currentEnduranceSpinRate * delta
+      TMP_QUAT_A.setFromAxisAngle(LOCAL_FORWARD_Z, animationState.enduranceSpinAngle)
+      enduranceShip.quaternion.copy(animationState.baseEnduranceQuaternion).multiply(TMP_QUAT_A)
+      enduranceShip.position.copy(animationState.baseEndurancePosition)
+
+      updateDockingFrameFromEndurance()
+
+      const rangerSpinRate = THREE.MathUtils.lerp(0, animationState.currentEnduranceSpinRate, spinUpT)
+      animationState.rangerSpinAngle += rangerSpinRate * delta
+
+      if (!animationState.approachStarted && animationState.time >= RANGER_APPROACH_START) {
+        animationState.approachStarted = true
+
+        TMP_VEC3_A.copy(rangerShip.position).sub(animationState.dockPortWorld)
+        animationState.rangerStartParallel = TMP_VEC3_A.dot(animationState.dockAxisWorld)
+
+        TMP_VEC3_B.copy(animationState.dockAxisWorld).multiplyScalar(animationState.rangerStartParallel)
+        TMP_VEC3_C.copy(TMP_VEC3_A).sub(TMP_VEC3_B)
+        animationState.rangerStartRadial = TMP_VEC3_C.length()
+
+        if (animationState.rangerStartRadial > 1e-4) {
+          animationState.rangerStartRadialDir.copy(TMP_VEC3_C).normalize()
+        } else {
+          animationState.rangerStartRadialDir.set(1, 0, 0)
+        }
+      }
+
+      const approachT = animationState.approachStarted ? rawApproachT : 0
+      const dockT = animationState.approachStarted ? rawDockT : 0
+
+      if (!animationState.approachStarted) {
+        animationState.rangerTargetPosition.copy(animationState.rangerInitialPosition)
+      } else {
+        TMP_VEC3_D.copy(animationState.rangerStartRadialDir)
+
+        const parallelApproach = THREE.MathUtils.lerp(animationState.rangerStartParallel, RANGER_DOCK_CLEARANCE, approachT)
+        const parallelOffset = THREE.MathUtils.lerp(parallelApproach, RANGER_DOCK_CLEARANCE, dockT)
+        const radialApproach = THREE.MathUtils.lerp(animationState.rangerStartRadial, RANGER_DOCK_RADIAL_OFFSET, approachT)
+        let radialOffset = THREE.MathUtils.lerp(radialApproach, 0, dockT)
+        radialOffset = THREE.MathUtils.lerp(radialOffset, 0, spinDownT)
+
+        animationState.rangerTargetPosition.copy(animationState.dockPortWorld)
+        animationState.rangerTargetPosition.addScaledVector(animationState.dockAxisWorld, parallelOffset)
+        animationState.rangerTargetPosition.addScaledVector(TMP_VEC3_D, radialOffset)
+      }
+
+      if (!animationState.approachStarted) {
+        rangerShip.position.copy(animationState.rangerInitialPosition)
+        animationState.rangerVelocity.set(0, 0, 0)
+      } else {
+        const springStiffness = THREE.MathUtils.lerp(5.0, 9.8, dockT)
+        const springDamping = THREE.MathUtils.lerp(4.6, 7.4, dockT)
+        integrateSpringVector(
+          rangerShip.position,
+          animationState.rangerVelocity,
+          animationState.rangerTargetPosition,
+          delta,
+          springStiffness,
+          springDamping,
+        )
+      }
+
+      TMP_QUAT_B.setFromUnitVectors(UP_VECTOR, TMP_VEC3_E.copy(animationState.dockAxisWorld).negate())
+      TMP_QUAT_C.setFromAxisAngle(animationState.dockAxisWorld, animationState.rangerSpinAngle)
+      rangerShip.quaternion.copy(TMP_QUAT_C).multiply(TMP_QUAT_B)
+
+      if (dockT > 0.995) {
+        rangerShip.position.lerp(animationState.rangerTargetPosition, THREE.MathUtils.clamp(delta * 6, 0, 1))
+      }
+
+      if (spinDownT > 0.995) {
+        rangerShip.position.copy(animationState.rangerTargetPosition)
+        animationState.rangerVelocity.set(0, 0, 0)
+      }
     }
 
     return {
@@ -612,14 +1273,21 @@ export default {
         sceneGroup.add(stars)
 
         positionCamera(camera)
+
+        enduranceShip = createDamagedEndurance()
+        rangerShip = createRangerShipWithoutLandingLegs()
+        sceneGroup.add(enduranceShip, rangerShip)
+        positionShipsInCameraShot(camera)
+        initializeShipAnimationState()
       },
 
-      update({ camera }) {
-        if (!planetSystem || !stars) {
+      update({ camera, delta }) {
+        if (!planetSystem || !stars || !enduranceShip || !rangerShip) {
           return
         }
 
         updateAtmosphereCenterUniform()
+        animateShipDockingSequence(delta)
 
         stars.position.copy(camera.position)
       },
@@ -646,6 +1314,9 @@ export default {
         sceneGroup = null
         stars = null
         planetSystem = null
+        enduranceShip = null
+        rangerShip = null
+        animationState.ready = false
         sunLight = null
         fillLight = null
         rootRef = null
