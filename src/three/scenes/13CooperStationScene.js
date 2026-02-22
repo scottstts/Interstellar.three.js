@@ -5,6 +5,8 @@ const STATION_RADIUS = 800
 const STATION_LENGTH = 4000
 const CYLINDER_SEGMENTS = 128
 const LENGTH_SEGMENTS = 64
+const CAMERA_INIT_POSITION = new THREE.Vector3(0, -600, -STATION_LENGTH * 0.35)
+const CAMERA_INIT_LOOK_AT = new THREE.Vector3(0, -800, 0)
 
 function seededRandom(seed) {
   let s = seed
@@ -1229,14 +1231,20 @@ export default {
         cameraRef.near = 1
         cameraRef.far = 12000
         cameraRef.fov = 65
-        cameraRef.position.set(0, -600, -STATION_LENGTH * 0.35)
-        cameraRef.lookAt(0, -800, 0)
+        cameraRef.position.copy(CAMERA_INIT_POSITION)
+        cameraRef.lookAt(CAMERA_INIT_LOOK_AT)
         cameraRef.updateProjectionMatrix()
 
         buildScene()
       },
 
-      update() {},
+      update() {
+        if (!cameraRef) {
+          return
+        }
+
+        cameraRef.position.copy(CAMERA_INIT_POSITION)
+      },
 
       resize() {},
 
