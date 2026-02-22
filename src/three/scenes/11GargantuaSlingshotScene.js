@@ -38,11 +38,16 @@ import { disposeObject3D } from '../utils/dispose'
 
 const SCENE_ID = 'gargantua-slingshot'
 const SCENE_TITLE = 'Slingshot Around Gargantua'
-const BLACK_HOLE_SCALE = 17
+const BLACK_HOLE_SCALE = 30
 const BLACK_HOLE_POSITION = new THREE.Vector3(0, 1.2, -72)
-const BLACK_HOLE_CAMERA_OFFSET = new THREE.Vector3(0, 2, 20)
+const BLACK_HOLE_CAMERA_OFFSET = new THREE.Vector3(0, 4, 40)
 const BLACK_HOLE_NOISE_TEXTURE_URL = '/textures/noise_deep.png'
 const SPACE_BACKGROUND_COLOR = 0x02040a
+const ENDURANCE_SCALE = 0.02
+const ENDURANCE_POSITION = new THREE.Vector3(-7.5, 3, -43)
+const ENDURANCE_LIGHT_COLOR = 0xffe3ad
+const ENDURANCE_LIGHT_INTENSITY = 2.4
+const ENDURANCE_LIGHT_LAYER = 1
 
 const rotateAxis = Fn(([axisInput, angleInput]) => {
   const angle = float(angleInput).toVar()
@@ -396,6 +401,316 @@ function createStarfieldTextureFromData(starfieldData, {
   return texture
 }
 
+function setObjectLayerRecursive(object, layer) {
+  object.layers.set(layer)
+  object.traverse((child) => {
+    child.layers.set(layer)
+  })
+}
+
+function createMetalMat(hexColor, roughness, metalness) {
+  const mat = new THREE.MeshStandardNodeMaterial()
+  mat.colorNode = color(hexColor)
+  mat.roughnessNode = float(roughness)
+  mat.metalnessNode = float(metalness)
+  return mat
+}
+
+function seededRand(seed) {
+  const x = Math.sin(seed + 1) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function buildTornHalfPod({
+  matDarkHull,
+  matSolarPanel,
+  matTornFace,
+  matWhiteHull,
+}) {
+  const group = new THREE.Group()
+
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 5), matWhiteHull)
+  hull.position.set(0, 0, -2.5)
+  hull.castShadow = true
+  hull.receiveShadow = true
+  group.add(hull)
+
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel)
+  panel.position.set(0, 0, -4.6)
+  panel.castShadow = true
+  group.add(panel)
+
+  const detail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 2.5), matDarkHull)
+  detail.position.set(0, 0, -1.25)
+  group.add(detail)
+
+  {
+    const NX = 16
+    const NY = 14
+    const xMin = -4.0
+    const xMax = 4.0
+    const yMin = -3.5
+    const yMax = 3.5
+    const verts = []
+    const idxArr = []
+    const vi = (ix, iy) => ix * (NY + 1) + iy
+
+    for (let ix = 0; ix <= NX; ix += 1) {
+      for (let iy = 0; iy <= NY; iy += 1) {
+        const x = xMin + (ix / NX) * (xMax - xMin)
+        const y = yMin + (iy / NY) * (yMax - yMin)
+
+        let zOff = 0.05
+        if (ix > 0 && ix < NX && iy > 0 && iy < NY) {
+          const seed = ix * 31 + iy * 17
+          const noise = Math.sin(ix * 2.1 + iy * 1.3) * 1.1
+            + Math.cos(ix * 4.7 - iy * 2.9) * 0.7
+            + (seededRand(seed) - 0.5) * 1.2
+          zOff = 0.05 + Math.abs(noise)
+        }
+
+        verts.push(x, y, zOff)
+      }
+    }
+
+    for (let ix = 0; ix < NX; ix += 1) {
+      for (let iy = 0; iy < NY; iy += 1) {
+        const a = vi(ix, iy)
+        const b = vi(ix + 1, iy)
+        const c = vi(ix + 1, iy + 1)
+        const d = vi(ix, iy + 1)
+        idxArr.push(a, b, c, a, c, d)
+      }
+    }
+
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+    geo.setIndex(idxArr)
+    geo.computeVertexNormals()
+
+    const mesh = new THREE.Mesh(geo, matTornFace)
+    mesh.castShadow = true
+    group.add(mesh)
+  }
+
+  const numShards = 20
+  for (let s = 0; s < numShards; s += 1) {
+    const t = s / (numShards - 1)
+    const angle = t * Math.PI * 2
+    const x = Math.cos(angle) * 3.8
+    const y = Math.sin(angle) * 3.3
+
+    const r1 = seededRand(s * 7)
+    const r2 = seededRand(s * 7 + 1)
+    const r3 = seededRand(s * 7 + 2)
+    const r4 = seededRand(s * 7 + 3)
+
+    const shardW = 0.4 + r1 * 1.5
+    const shardH = 0.3 + r2 * 1.2
+    const shardD = 0.3 + r3 * 1.0
+    const zOff = 0.1 + r4 * 1.5
+
+    const shardGeo = new THREE.BoxGeometry(shardW, shardH, shardD)
+    const shard = new THREE.Mesh(shardGeo, matWhiteHull)
+
+    shard.position.set(x, y, zOff)
+    shard.rotation.x = (r1 - 0.5) * 1.5
+    shard.rotation.y = (r2 - 0.5) * 1.5
+    shard.rotation.z = angle + (r3 - 0.5) * 0.5
+    shard.castShadow = true
+    group.add(shard)
+  }
+
+  return group
+}
+
+function createEnduranceWithRanger() {
+  const matWhiteHull = createMetalMat(0xdddddd, 0.4, 0.6)
+  const matDarkHull = createMetalMat(0x333333, 0.5, 0.7)
+  const matSolarPanel = createMetalMat(0x111111, 0.15, 0.9)
+  const matGlossBlack = createMetalMat(0x050505, 0.05, 0.8)
+  const matStump = createMetalMat(0x222222, 0.9, 0.3)
+  const matTornFace = createMetalMat(0x1a1a1a, 0.85, 0.45)
+
+  const endurance = new THREE.Group()
+  const RING_RADIUS = 32
+  const NUM_MODULES = 12
+  const IDX_BLOWN = 4
+  const IDX_PARTIAL = 5
+
+  for (let i = 0; i < NUM_MODULES; i += 1) {
+    const angle = (i / NUM_MODULES) * Math.PI * 2
+    const mx = Math.cos(angle) * RING_RADIUS
+    const my = Math.sin(angle) * RING_RADIUS
+
+    if (i === IDX_BLOWN) {
+      const stumpGroup = new THREE.Group()
+      const stump = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 1.2), matStump)
+      stump.castShadow = true
+      stumpGroup.add(stump)
+
+      const stumpShards = [
+        { w: 0.8, h: 3.0, d: 0.35, x: 2.4, y: 1.8, z: 0.55, rx: 0.2, rz: 0.3 },
+        { w: 0.5, h: 1.8, d: 0.3, x: -2.1, y: -2.2, z: 0.55, rx: -0.1, rz: -0.2 },
+        { w: 0.9, h: 1.4, d: 0.35, x: 2.7, y: -1.3, z: 0.5, rx: 0.25, rz: 0.35 },
+        { w: 0.4, h: 2.3, d: 0.28, x: -2.9, y: 1.0, z: 0.5, rx: -0.15, rz: -0.28 },
+        { w: 0.7, h: 0.9, d: 0.4, x: 0.3, y: 2.7, z: 0.45, rx: 0.1, rz: 0.18 },
+      ]
+
+      stumpShards.forEach((s) => {
+        const shard = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, s.d), matStump)
+        shard.position.set(s.x, s.y, s.z)
+        shard.rotation.set(s.rx, 0, s.rz)
+        shard.castShadow = true
+        stumpGroup.add(shard)
+      })
+
+      stumpGroup.position.set(mx, my, 0)
+      stumpGroup.rotation.z = angle + Math.PI / 2
+      stumpGroup.lookAt(0, 0, 0)
+      endurance.add(stumpGroup)
+    } else if (i === IDX_PARTIAL) {
+      const modGroup = buildTornHalfPod({
+        matDarkHull,
+        matSolarPanel,
+        matTornFace,
+        matWhiteHull,
+      })
+      modGroup.position.set(mx, my, 0)
+      modGroup.rotation.z = angle + Math.PI / 2
+      modGroup.lookAt(0, 0, 0)
+      modGroup.rotateY(Math.PI)
+      endurance.add(modGroup)
+    } else {
+      const modGroup = new THREE.Group()
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 10), matWhiteHull)
+      base.castShadow = true
+      base.receiveShadow = true
+      modGroup.add(base)
+
+      const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel)
+      innerPanel.position.set(0, 0, -4.6)
+      innerPanel.castShadow = true
+      innerPanel.receiveShadow = true
+      modGroup.add(innerPanel)
+
+      const sideDetail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 4), matDarkHull)
+      sideDetail.position.set(0, 0, 1)
+      modGroup.add(sideDetail)
+
+      modGroup.position.set(mx, my, 0)
+      modGroup.rotation.z = angle + Math.PI / 2
+      modGroup.lookAt(0, 0, 0)
+      endurance.add(modGroup)
+    }
+
+    const jointAngle = angle + (Math.PI / NUM_MODULES)
+    const jx = Math.cos(jointAngle) * RING_RADIUS
+    const jy = Math.sin(jointAngle) * RING_RADIUS
+
+    const jointGroup = new THREE.Group()
+    jointGroup.position.set(jx, jy, 0)
+    jointGroup.rotation.z = jointAngle
+
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 9, 32), matWhiteHull)
+    tube.castShadow = true
+    tube.receiveShadow = true
+    jointGroup.add(tube)
+
+    const jointCenter = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 2.5, 32), matWhiteHull)
+    jointGroup.add(jointCenter)
+
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.5, 32), matGlossBlack)
+    port.rotation.z = Math.PI / 2
+    jointGroup.add(port)
+
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32), matDarkHull)
+    rim.rotation.z = Math.PI / 2
+    jointGroup.add(rim)
+
+    endurance.add(jointGroup)
+  }
+
+  const poleLength = RING_RADIUS - 5
+  const poleGroup = new THREE.Group()
+  poleGroup.position.set(0, poleLength / 2 + 2, 0)
+
+  const poleCore = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, poleLength, 32), matWhiteHull)
+  poleCore.castShadow = true
+  poleCore.receiveShadow = true
+  poleGroup.add(poleCore)
+
+  for (let i = -1; i <= 1; i += 1) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 2, 32), matDarkHull)
+    ring.position.y = i * (poleLength / 3)
+    poleGroup.add(ring)
+  }
+  endurance.add(poleGroup)
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3, 32), matWhiteHull)
+  hub.rotation.x = Math.PI / 2
+  hub.castShadow = true
+  hub.receiveShadow = true
+  endurance.add(hub)
+
+  const dockRing = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 16, 64), matDarkHull)
+  dockRing.position.z = 1.5
+  endurance.add(dockRing)
+
+  const ranger = new THREE.Group()
+  ranger.scale.set(2, 2, 2)
+
+  const fuseGeo = new THREE.ConeGeometry(4.5, 10, 4)
+  fuseGeo.rotateY(Math.PI / 4)
+  fuseGeo.rotateX(Math.PI / 2)
+  fuseGeo.scale(1.1, 0.2, 1.0)
+  ranger.add(new THREE.Mesh(fuseGeo, matWhiteHull))
+
+  const underGeo = fuseGeo.clone()
+  underGeo.scale(0.98, 0.5, 0.98)
+  underGeo.translate(0, -0.15, 0)
+  ranger.add(new THREE.Mesh(underGeo, matDarkHull))
+
+  const cockpitBlock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 3.5), matWhiteHull)
+  cockpitBlock.position.set(0, 0.4, 0)
+  cockpitBlock.rotation.x = Math.PI / 16
+  cockpitBlock.castShadow = true
+  ranger.add(cockpitBlock)
+
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.5), matGlossBlack)
+  canopy.position.set(0, 0.7, 1.2)
+  canopy.rotation.x = Math.PI / 6
+  ranger.add(canopy)
+
+  const wingGeo = new THREE.BoxGeometry(3.5, 0.2, 4.0)
+
+  const wingL = new THREE.Mesh(wingGeo, matWhiteHull)
+  wingL.position.set(-2.8, 0, -2.5)
+  wingL.rotation.y = Math.PI / 8
+  wingL.castShadow = true
+  ranger.add(wingL)
+
+  const wingR = new THREE.Mesh(wingGeo, matWhiteHull)
+  wingR.position.set(2.8, 0, -2.5)
+  wingR.rotation.y = -Math.PI / 8
+  wingR.castShadow = true
+  ranger.add(wingR)
+
+  const engines = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 1.5), matDarkHull)
+  engines.position.set(0, -0.1, -4.8)
+  ranger.add(engines)
+
+  ranger.position.set(0, -5, 3)
+  ranger.rotateX(-300)
+  endurance.add(ranger)
+
+  endurance.rotation.x = -0.5
+  endurance.rotation.y = -0.3
+
+  return endurance
+}
+
 export default {
   id: SCENE_ID,
   title: SCENE_TITLE,
@@ -405,21 +720,27 @@ export default {
     let noiseTexture = null
     let starsTexture = null
     let starfieldData = null
+    let endurance = null
     let rootRef = null
     let previousBackground = null
     let previousEnvironment = null
+    let cameraRef = null
+    let previousCameraLayerMask = null
     let disposed = false
 
     return {
       async init({ root, scene, camera }) {
         disposed = false
         rootRef = root
+        cameraRef = camera ?? null
 
         group = new THREE.Group()
         group.name = `${SCENE_ID}-group`
         root.add(group)
 
         if (camera) {
+          previousCameraLayerMask = camera.layers.mask
+          camera.layers.enable(ENDURANCE_LIGHT_LAYER)
           camera.position.copy(BLACK_HOLE_POSITION).add(BLACK_HOLE_CAMERA_OFFSET)
           camera.lookAt(BLACK_HOLE_POSITION)
         }
@@ -449,6 +770,24 @@ export default {
         blackHole.group.position.copy(BLACK_HOLE_POSITION)
         blackHole.group.rotation.z = THREE.MathUtils.degToRad(6)
         group.add(blackHole.group)
+
+        endurance = createEnduranceWithRanger()
+        endurance.scale.setScalar(ENDURANCE_SCALE)
+        endurance.position.copy(ENDURANCE_POSITION)
+        setObjectLayerRecursive(endurance, ENDURANCE_LIGHT_LAYER)
+        group.add(endurance)
+
+        const enduranceLightTarget = new THREE.Object3D()
+        enduranceLightTarget.position.copy(ENDURANCE_POSITION)
+        enduranceLightTarget.layers.set(ENDURANCE_LIGHT_LAYER)
+        const enduranceKeyLight = new THREE.DirectionalLight(
+          ENDURANCE_LIGHT_COLOR,
+          ENDURANCE_LIGHT_INTENSITY
+        )
+        enduranceKeyLight.position.copy(BLACK_HOLE_POSITION)
+        enduranceKeyLight.layers.set(ENDURANCE_LIGHT_LAYER)
+        enduranceKeyLight.target = enduranceLightTarget
+        group.add(enduranceKeyLight, enduranceLightTarget)
       },
 
       update() {},
@@ -461,6 +800,10 @@ export default {
         if (scene) {
           scene.background = previousBackground ?? new THREE.Color(SPACE_BACKGROUND_COLOR)
           scene.environment = previousEnvironment ?? null
+        }
+
+        if (cameraRef && previousCameraLayerMask !== null) {
+          cameraRef.layers.mask = previousCameraLayerMask
         }
 
         if (group) {
@@ -481,11 +824,14 @@ export default {
         }
 
         blackHole = null
+        endurance = null
         starfieldData = null
         group = null
         rootRef = null
         previousBackground = null
         previousEnvironment = null
+        cameraRef = null
+        previousCameraLayerMask = null
       },
     }
   },
