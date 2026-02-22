@@ -348,26 +348,6 @@ function createStaticStarfieldData({
   }
 }
 
-function createSpaceStars(starfieldData) {
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(starfieldData.positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(starfieldData.colors, 3))
-
-  const material = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 1.38,
-    sizeAttenuation: false,
-    transparent: true,
-    opacity: 0.92,
-    depthWrite: false,
-    vertexColors: true,
-  })
-
-  const stars = new THREE.Points(geometry, material)
-  stars.name = 'scene11-space-stars'
-  return stars
-}
-
 function createStarfieldTextureFromData(starfieldData, {
   width = 2048,
   height = 1024,
@@ -424,10 +404,10 @@ export default {
     let blackHole = null
     let noiseTexture = null
     let starsTexture = null
-    let stars = null
     let starfieldData = null
     let rootRef = null
     let previousBackground = null
+    let previousEnvironment = null
     let disposed = false
 
     return {
@@ -445,13 +425,12 @@ export default {
         }
 
         previousBackground = scene.background
-        scene.background = new THREE.Color(SPACE_BACKGROUND_COLOR)
+        previousEnvironment = scene.environment
 
         starfieldData = createStaticStarfieldData()
-        stars = createSpaceStars(starfieldData)
-        group.add(stars)
-
         starsTexture = createStarfieldTextureFromData(starfieldData)
+        scene.background = starsTexture
+        scene.environment = starsTexture
 
         noiseTexture = await loadBlackHoleNoiseTexture()
         if (disposed) {
@@ -481,6 +460,7 @@ export default {
 
         if (scene) {
           scene.background = previousBackground ?? new THREE.Color(SPACE_BACKGROUND_COLOR)
+          scene.environment = previousEnvironment ?? null
         }
 
         if (group) {
@@ -501,11 +481,11 @@ export default {
         }
 
         blackHole = null
-        stars = null
         starfieldData = null
         group = null
         rootRef = null
         previousBackground = null
+        previousEnvironment = null
       },
     }
   },
