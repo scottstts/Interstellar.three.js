@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cooper Station - Corrected</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: sans-serif;
+        }
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            pointer-events: none;
+            z-index: 10;
+            background: rgba(0,0,0,0.8);
+            padding: 20px 40px;
+            border-radius: 8px;
+            text-align: center;
+        }
+    </style>
+    <!-- Import Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="loading">Establishing Station Orbit...<br><span style="font-size: 16px; color:#aaa;">Building interior structures</span></div>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 1. Scene Setup ---
+        const scene = new THREE.Scene();
+        const skyColor = 0xd4cebd; // Dusty, hazy atmospheric color
+        scene.background = new THREE.Color(skyColor); 
+        scene.fog = new THREE.FogExp2(skyColor, 0.00015);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 35000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. Station Scale Constants ---
+        const RADIUS = 3000;
+        const LENGTH = 25000;
+
+        // --- 3. Procedural Texture (Farmland) ---
+        function createLandscapeTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 4096; canvas.height = 4096;
+            const ctx = canvas.getContext('2d');
+
+            // Base earth tone
+            ctx.fillStyle = '#424a33';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const numCols = 64;  // Radial divisions
+            const numRows = 128; // Length divisions
+            const colW = canvas.width / numCols;
+            const rowH = canvas.height / numRows;
+
+            const fieldColors = ['#4f6336', '#5d733e', '#968c5b', '#7a764d', '#3c4a2a', '#6b7a45'];
+
+            for (let i = 0; i < numCols; i++) {
+                for (let j = 0; j < numRows; j++) {
+                    const stretchY = Math.random() > 0.6 ? Math.floor(Math.random() * 5) + 1 : 1;
+                    const stretchX = Math.random() > 0.8 ? 2 : 1;
+                    
+                    ctx.fillStyle = fieldColors[Math.floor(Math.random() * fieldColors.length)];
+                    ctx.fillRect(i * colW, j * rowH, colW * stretchX, rowH * stretchY);
+                    
+                    // Dirt paths between fields
+                    ctx.strokeStyle = '#4a4435';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(i * colW, j * rowH, colW * stretchX, rowH * stretchY);
+                }
+            }
+
+            // Draw major longitudinal roads (wrapping the cylinder)
+            ctx.fillStyle = '#666666';
+            for(let i = 0; i < numCols; i += 12) {
+                ctx.fillRect(i * colW - 6, 0, 12, canvas.height);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(1, 4); // Repeat texture along the Z-axis tube
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            return texture;
+        }
+
+        // --- 4. The Main Cylinder Shell ---
+        const shellGeo = new THREE.CylinderGeometry(RADIUS, RADIUS, LENGTH, 128, 1, true);
+        const shellMat = new THREE.MeshStandardMaterial({
+            map: createLandscapeTexture(),
+            side: THREE.BackSide,
+            roughness: 1.0,
+            metalness: 0.0
+        });
+        const shell = new THREE.Mesh(shellGeo, shellMat);
+        shell.rotation.x = Math.PI / 2; // Align along Z-axis
+        shell.receiveShadow = true;
+        scene.add(shell);
+
+        // --- 5. Crucial Math Helper for Inner Surface ---
+        // Accurately maps any Object3D to the curved inner surface of the cylinder
+        function applySurfaceTransform(obj, angle, z, yOffset = 0) {
+            // Reset object scale/rotation to prevent compounding errors before orienting
+            obj.scale.set(1, 1, 1);
+            obj.rotation.set(0, 0, 0);
+
+            const r = RADIUS - yOffset;
+            const x = Math.cos(angle) * r;
+            const y = Math.sin(angle) * r;
+            
+            // 1. Set physical position
+            obj.position.set(x, y, z);
+            
+            // 2. Set UP vector to point exactly opposite to the origin (so roofs point to the center of the sky)
+            const normal = new THREE.Vector3(-x, -y, 0).normalize();
+            obj.up.copy(normal);
+            
+            // 3. Aim the object forward down the Z-axis tube
+            obj.lookAt(x, y, z - 100);
+        }
+
+        // --- 6. Building the City (Instancing without Merging) ---
+        function generateCity() {
+            // A. Define Geometries (Origin is translated to the bottom center so they sit flush on the ground)
+            const houseBodyGeo = new THREE.BoxGeometry(16, 12, 22); houseBodyGeo.translate(0, 6, 0);
+            const houseRoofGeo = new THREE.ConeGeometry(14, 10, 4); houseRoofGeo.rotateY(Math.PI/4); houseRoofGeo.translate(0, 17, 0);
+
+            const treeTrunkGeo = new THREE.CylinderGeometry(1.5, 2.5, 10, 6); treeTrunkGeo.translate(0, 5, 0);
+            const treeLeavesGeo = new THREE.SphereGeometry(10, 7, 7); treeLeavesGeo.translate(0, 14, 0);
+
+            // B. Instanced Meshes
+            const houseCount = 7000;
+            const treeCount = 9000;
+
+            const instMat = new THREE.MeshStandardMaterial({ roughness: 0.9, color: 0xffffff });
+            
+            const iMeshHouseBody = new THREE.InstancedMesh(houseBodyGeo, instMat, houseCount);
+            const iMeshHouseRoof = new THREE.InstancedMesh(houseRoofGeo, instMat, houseCount);
+            const iMeshTreeTrunk = new THREE.InstancedMesh(treeTrunkGeo, instMat, treeCount);
+            const iMeshTreeLeaves = new THREE.InstancedMesh(treeLeavesGeo, instMat, treeCount);
+
+            [iMeshHouseBody, iMeshHouseRoof, iMeshTreeTrunk, iMeshTreeLeaves].forEach(m => {
+                m.castShadow = true; m.receiveShadow = true; scene.add(m);
+            });
+
+            // C. Populate Matrices & Colors
+            const dummy = new THREE.Object3D();
+            const colorDummy1 = new THREE.Color();
+            const colorDummy2 = new THREE.Color();
+
+            // 1. Populate Houses
+            for(let i = 0; i < houseCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const z = -(Math.random() * (LENGTH - 1500) + 500);
+
+                // Prevent spawning directly on the foreground elements area
+                if(z > -1000 && Math.abs(angle - (-Math.PI/2)) < 0.25) { continue; }
+
+                applySurfaceTransform(dummy, angle, z, 0);
+                dummy.rotateY(Math.random() * Math.PI); // Local Y rotation
+                const s = 0.7 + Math.random() * 0.5;
+                dummy.scale.set(s, s, s);
+                dummy.updateMatrix();
+
+                // Apply identical matrix to body and roof so they assemble perfectly
+                iMeshHouseBody.setMatrixAt(i, dummy.matrix);
+                iMeshHouseRoof.setMatrixAt(i, dummy.matrix);
+
+                // Distinct colors
+                colorDummy1.setHSL(0.1 + Math.random()*0.05, Math.random()*0.3, 0.4 + Math.random()*0.4); // House: White/Tan
+                colorDummy2.setHSL(0.02 + Math.random()*0.05, 0.4 + Math.random()*0.2, 0.2 + Math.random()*0.1); // Roof: Dark red/brown
+                
+                iMeshHouseBody.setColorAt(i, colorDummy1);
+                iMeshHouseRoof.setColorAt(i, colorDummy2);
+            }
+
+            // 2. Populate Trees
+            for(let i = 0; i < treeCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const z = -(Math.random() * (LENGTH - 1500) + 500);
+                if(z > -1000 && Math.abs(angle - (-Math.PI/2)) < 0.25) { continue; }
+
+                applySurfaceTransform(dummy, angle, z, 0);
+                dummy.rotateY(Math.random() * Math.PI);
+                const s = 0.5 + Math.random() * 0.8;
+                dummy.scale.set(s, s, s);
+                dummy.updateMatrix();
+
+                iMeshTreeTrunk.setMatrixAt(i, dummy.matrix);
+                iMeshTreeLeaves.setMatrixAt(i, dummy.matrix);
+
+                colorDummy1.setHex(0x5a4d41); // Trunk brown
+                colorDummy2.setHSL(0.25 + Math.random()*0.1, 0.4 + Math.random()*0.3, 0.2 + Math.random()*0.1); // Leaves green
+                
+                iMeshTreeTrunk.setColorAt(i, colorDummy1);
+                iMeshTreeLeaves.setColorAt(i, colorDummy2);
+            }
+
+            // Flag updates
+            [iMeshHouseBody, iMeshHouseRoof, iMeshTreeTrunk, iMeshTreeLeaves].forEach(m => {
+                m.instanceMatrix.needsUpdate = true;
+                if(m.instanceColor) m.instanceColor.needsUpdate = true;
+            });
+
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        generateCity();
+
+        // --- 7. Foreground Movie Elements ---
+        const foregroundGroup = new THREE.Group();
+
+        // The specific Brick Building
+        const bMat = new THREE.MeshStandardMaterial({ color: 0x824438, roughness: 0.8 }); 
+        const mainBuilding = new THREE.Mesh(new THREE.BoxGeometry(140, 60, 45), bMat);
+        mainBuilding.position.set(0, 30, 0); // Origin base at Y=0
+        mainBuilding.castShadow = true; mainBuilding.receiveShadow = true;
+        foregroundGroup.add(mainBuilding);
+
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        const mainRoof = new THREE.Mesh(new THREE.BoxGeometry(150, 5, 55), roofMat);
+        mainRoof.position.set(0, 62.5, 0);
+        mainRoof.castShadow = true;
+        foregroundGroup.add(mainRoof);
+
+        // Procedural Windows
+        const wMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.2 });
+        const wGeo = new THREE.BoxGeometry(6, 12, 47);
+        for(let x = -55; x <= 55; x += 20) {
+            for(let y = 15; y <= 45; y += 15) {
+                const w = new THREE.Mesh(wGeo, wMat);
+                w.position.set(x, y, 0);
+                foregroundGroup.add(w);
+            }
+        }
+
+        // Baseball Field
+        const grass = new THREE.Mesh(new THREE.PlaneGeometry(350, 250), new THREE.MeshStandardMaterial({ color: 0x4a7023 }));
+        grass.rotation.x = -Math.PI / 2;
+        grass.position.set(-50, 0.5, 120);
+        grass.receiveShadow = true;
+        foregroundGroup.add(grass);
+
+        const dirt = new THREE.Mesh(new THREE.CircleGeometry(45, 32), new THREE.MeshStandardMaterial({ color: 0xba9b68 }));
+        dirt.rotation.x = -Math.PI / 2;
+        dirt.position.set(-50, 1.0, 90);
+        dirt.receiveShadow = true;
+        foregroundGroup.add(dirt);
+
+        // Apply our math helper directly to the group to affix it to the curved station floor
+        applySurfaceTransform(foregroundGroup, -Math.PI / 2 + 0.12, -400, 0);
+        scene.add(foregroundGroup);
+
+        // --- 8. Lighting (Sun down the tube) ---
+        const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.45);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.35);
+        scene.add(hemiLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+        // Positioned far down the tube, shining back
+        sunLight.position.set(0, RADIUS * 0.6, -LENGTH * 0.5); 
+        sunLight.target.position.set(0, -RADIUS, -100);
+        sunLight.castShadow = true;
+        
+        const d = 2000;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.near = 100;
+        sunLight.shadow.camera.far = LENGTH;
+        sunLight.shadow.bias = -0.0005;
+        sunLight.shadow.mapSize.width = 4096;
+        sunLight.shadow.mapSize.height = 4096;
+        scene.add(sunLight);
+        scene.add(sunLight.target);
+
+        // --- 9. Camera setup (Looking straight out of the "window") ---
+        const cameraAngle = -Math.PI / 2; // Bottom center
+        const cameraHeight = 60; // Up from the floor
+
+        camera.position.x = Math.cos(cameraAngle) * (RADIUS - cameraHeight);
+        camera.position.y = Math.sin(cameraAngle) * (RADIUS - cameraHeight);
+        camera.position.z = 0;
+
+        // Look straight down the Z tube, angled slightly up to observe the landscape curving above
+        camera.lookAt(
+            Math.cos(cameraAngle) * RADIUS, 
+            Math.sin(cameraAngle + 0.12) * RADIUS, 
+            -2000
+        );
+
+        // --- 10. Controls & Render Loop ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+        
+        // Lock controls to maintain the specific view from the bottom floor
+        controls.minDistance = 1;
+        controls.maxDistance = 150; 
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+        controls.minPolarAngle = Math.PI / 2 - 0.2;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

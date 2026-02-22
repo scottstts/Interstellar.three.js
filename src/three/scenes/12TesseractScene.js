@@ -8,8 +8,18 @@ const BASE_PITCH = 2.1
 const MOVEMENT_KEY_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'])
 const MAX_ORBIT_PITCH = Math.PI / 2 - 0.05
 const MIN_ORBIT_RADIUS = 0.001
+const SHELF_HIGH_DETAIL_RADIUS = 20
+const SHELF_CULL_RADIUS = 34
+const LIGHT_HIGH_DETAIL_RADIUS = 22
+const DETAIL_HIGH = 2
+const DETAIL_LOW = 1
+const DETAIL_CULLED = 0
+const SHELF_HIGH_DETAIL_RADIUS_SQ = SHELF_HIGH_DETAIL_RADIUS * SHELF_HIGH_DETAIL_RADIUS
+const SHELF_CULL_RADIUS_SQ = SHELF_CULL_RADIUS * SHELF_CULL_RADIUS
+const LIGHT_HIGH_DETAIL_RADIUS_SQ = LIGHT_HIGH_DETAIL_RADIUS * LIGHT_HIGH_DETAIL_RADIUS
 const TMP_COOPER_FOCUS = new THREE.Vector3()
 const TMP_CAMERA_ORBIT_OFFSET = new THREE.Vector3()
+const TMP_DISTANCE_SAMPLE = new THREE.Vector3()
 const COOPER_FOCUS_BOX = new THREE.Box3()
 
 function createBookSpineTexture(seed) {
@@ -224,6 +234,7 @@ export default {
   title: 'Tesseract Bookshelf Sequence',
   create() {
     let group = null
+    let staticRoot = null
     let cooper = null
     let keyLight = null
     let startElapsed = null
@@ -314,9 +325,28 @@ export default {
         const orangeGlowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.45, 0.05) })
         const dimWarmMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 0.25, 0.02) })
 
+        const cameraCullOrigin = camera.position.clone()
+        const classifyPlacement = (x, y, z) => {
+          TMP_DISTANCE_SAMPLE.set(x, y, z)
+          const distanceSq = cameraCullOrigin.distanceToSquared(TMP_DISTANCE_SAMPLE)
+          if (distanceSq > SHELF_CULL_RADIUS_SQ) {
+            return DETAIL_CULLED
+          }
+
+          if (distanceSq > SHELF_HIGH_DETAIL_RADIUS_SQ) {
+            return DETAIL_LOW
+          }
+
+          return DETAIL_HIGH
+        }
+
+        const dividerBeamMat = beamMat(0x090909)
+        const frameBeamMat = beamMat(0x070707)
+
         let shelfIdx = 0
-        const buildBookshelfUnit = (width, height, rotated) => {
+        const buildBookshelfUnit = (width, height, rotated, detail = 'high') => {
           const shelf = new THREE.Group()
+          const isLowDetail = detail === 'low'
           const depth = 0.35
           const panelMats = rotated ? bookPanelMatsRotated : bookPanelMats
           const panelMat = panelMats[shelfIdx % panelMats.length]
@@ -327,50 +357,68 @@ export default {
           back.position.z = depth * 0.5
           shelf.add(back)
 
-          const glow = new THREE.Mesh(
-            new THREE.BoxGeometry(width * 0.96, height * 0.96, 0.005),
-            warmGlowMat,
-          )
-          glow.position.z = depth * 0.5 - 0.025
-          shelf.add(glow)
+          if (!isLowDetail) {
+            const glow = new THREE.Mesh(
+              new THREE.BoxGeometry(width * 0.96, height * 0.96, 0.005),
+              warmGlowMat,
+            )
+            glow.position.z = depth * 0.5 - 0.025
+            shelf.add(glow)
+          }
 
-          const shelfCount = Math.round(height / 0.45)
+          const shelfCount = isLowDetail
+            ? Math.max(2, Math.round(height / 1.35))
+            : Math.max(3, Math.round(height / 0.45))
           for (let index = 0; index <= shelfCount; index += 1) {
             const shelfY = -height / 2 + (height / shelfCount) * index
-            const board = new THREE.Mesh(new THREE.BoxGeometry(width, 0.028, depth), edgeMat)
+            const board = new THREE.Mesh(
+              new THREE.BoxGeometry(width, isLowDetail ? 0.024 : 0.028, depth),
+              edgeMat,
+            )
             board.position.set(0, shelfY, 0)
             shelf.add(board)
           }
 
-          const dividerCount = Math.round(width / 0.75)
+          const dividerCount = isLowDetail
+            ? Math.max(1, Math.round(width / 2.25))
+            : Math.max(2, Math.round(width / 0.75))
           for (let index = 0; index <= dividerCount; index += 1) {
             const dividerX = -width / 2 + (width / dividerCount) * index
-            const divider = new THREE.Mesh(new THREE.BoxGeometry(0.02, height, depth), beamMat(0x090909))
+            const divider = new THREE.Mesh(
+              new THREE.BoxGeometry(isLowDetail ? 0.016 : 0.02, height, depth),
+              dividerBeamMat,
+            )
             divider.position.set(dividerX, 0, 0)
             shelf.add(divider)
           }
 
-          const leftSide = new THREE.Mesh(new THREE.BoxGeometry(depth, height, 0.025), edgeMat)
-          leftSide.position.set(-width / 2, 0, 0)
-          shelf.add(leftSide)
+          if (!isLowDetail) {
+            const leftSide = new THREE.Mesh(new THREE.BoxGeometry(depth, height, 0.025), edgeMat)
+            leftSide.position.set(-width / 2, 0, 0)
+            shelf.add(leftSide)
 
-          const rightSide = new THREE.Mesh(new THREE.BoxGeometry(depth, height, 0.025), edgeMat)
-          rightSide.position.set(width / 2, 0, 0)
-          shelf.add(rightSide)
+            const rightSide = new THREE.Mesh(new THREE.BoxGeometry(depth, height, 0.025), edgeMat)
+            rightSide.position.set(width / 2, 0, 0)
+            shelf.add(rightSide)
+          }
 
-          const frameThickness = 0.055
-          const frameMaterial = beamMat(0x070707)
-          const frameBoxes = [
-            [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
-            [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
-            [-width / 2 - frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
-            [width / 2 + frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
-          ]
+          const frameThickness = isLowDetail ? 0.045 : 0.055
+          const frameBoxes = isLowDetail
+            ? [
+                [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
+                [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
+              ]
+            : [
+                [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
+                [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
+                [-width / 2 - frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
+                [width / 2 + frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
+              ]
 
           for (const [x, y, z, boxWidth, boxHeight, boxDepth] of frameBoxes) {
             const frame = new THREE.Mesh(
               new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth),
-              frameMaterial,
+              frameBeamMat,
             )
             frame.position.set(x, y, z)
             shelf.add(frame)
@@ -382,6 +430,29 @@ export default {
         const tesseractRoot = new THREE.Group()
         group.add(tesseractRoot)
 
+        staticRoot = new THREE.Group()
+        staticRoot.name = 'scene-12-tesseract-static'
+        tesseractRoot.add(staticRoot)
+
+        const placeShelfUnit = ({ width, height, rotated, x, y, z, rotationX, rotationY }) => {
+          const detailLevel = classifyPlacement(x, y, z)
+          if (detailLevel === DETAIL_CULLED) {
+            return
+          }
+
+          const shelf = buildBookshelfUnit(width, height, rotated, detailLevel === DETAIL_HIGH ? 'high' : 'low')
+          shelf.position.set(x, y, z)
+          if (typeof rotationX === 'number') {
+            shelf.rotation.x = rotationX
+          }
+
+          if (typeof rotationY === 'number') {
+            shelf.rotation.y = rotationY
+          }
+
+          staticRoot.add(shelf)
+        }
+
         for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += BASE_PITCH) {
           const height = 3.4
           const width = BASE_PITCH * 0.95
@@ -390,10 +461,7 @@ export default {
             [CORRIDOR_WIDTH, 1.5, -Math.PI / 2],
           ]
           for (const [x, y, rotationY] of sideTransforms) {
-            const shelf = buildBookshelfUnit(width, height, true)
-            shelf.position.set(x, y, z)
-            shelf.rotation.y = rotationY
-            tesseractRoot.add(shelf)
+            placeShelfUnit({ width, height, rotated: true, x, y, z, rotationY })
           }
 
           const capTransforms = [
@@ -401,10 +469,7 @@ export default {
             [0, -CORRIDOR_HEIGHT + 2, -Math.PI / 2],
           ]
           for (const [x, y, rotationX] of capTransforms) {
-            const shelf = buildBookshelfUnit(width, height * 0.85, false)
-            shelf.position.set(x, y, z)
-            shelf.rotation.x = rotationX
-            tesseractRoot.add(shelf)
+            placeShelfUnit({ width, height: height * 0.85, rotated: false, x, y, z, rotationX })
           }
         }
 
@@ -419,10 +484,7 @@ export default {
               [CORRIDOR_WIDTH + offset, 1.5, -Math.PI / 2],
             ]
             for (const [x, y, rotationY] of sideTransforms) {
-              const shelf = buildBookshelfUnit(width, height, true)
-              shelf.position.set(x, y, z)
-              shelf.rotation.y = rotationY
-              tesseractRoot.add(shelf)
+              placeShelfUnit({ width, height, rotated: true, x, y, z, rotationY })
             }
 
             const capTransforms = [
@@ -430,10 +492,7 @@ export default {
               [0, -CORRIDOR_HEIGHT + 2 - offset, -Math.PI / 2],
             ]
             for (const [x, y, rotationX] of capTransforms) {
-              const shelf = buildBookshelfUnit(width, height * 0.8, false)
-              shelf.position.set(x, y, z)
-              shelf.rotation.x = rotationX
-              tesseractRoot.add(shelf)
+              placeShelfUnit({ width, height: height * 0.8, rotated: false, x, y, z, rotationX })
             }
           }
         }
@@ -447,25 +506,52 @@ export default {
             const outerOffset = (layer + 1) * 2.8
             const span = outerOffset - innerOffset
 
-            for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 1.6) {
-              for (let yOffset = -1.5; yOffset <= 1.8; yOffset += 0.7) {
-                const leftFin = new THREE.Mesh(new THREE.BoxGeometry(span, 0.025, 0.025), finMat)
-                leftFin.position.set(-CORRIDOR_WIDTH - innerOffset - span / 2, 1.5 + yOffset, z)
+            let zIndex = 0
+            for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 1.6, zIndex += 1) {
+              let yIndex = 0
+              for (let yOffset = -1.5; yOffset <= 1.8; yOffset += 0.7, yIndex += 1) {
+                const y = 1.5 + yOffset
+                const detailLevel = classifyPlacement(0, y, z)
+                if (detailLevel === DETAIL_CULLED) {
+                  continue
+                }
+
+                if (detailLevel === DETAIL_LOW && (zIndex + yIndex + layer) % 2 === 1) {
+                  continue
+                }
+
+                const thickness = detailLevel === DETAIL_HIGH ? 0.025 : 0.018
+
+                const leftFin = new THREE.Mesh(new THREE.BoxGeometry(span, thickness, thickness), finMat)
+                leftFin.position.set(-CORRIDOR_WIDTH - innerOffset - span / 2, y, z)
                 connectorGroup.add(leftFin)
 
-                const rightFin = new THREE.Mesh(new THREE.BoxGeometry(span, 0.025, 0.025), finMat)
-                rightFin.position.set(CORRIDOR_WIDTH + innerOffset + span / 2, 1.5 + yOffset, z)
+                const rightFin = new THREE.Mesh(new THREE.BoxGeometry(span, thickness, thickness), finMat)
+                rightFin.position.set(CORRIDOR_WIDTH + innerOffset + span / 2, y, z)
                 connectorGroup.add(rightFin)
               }
             }
 
-            for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 2.0) {
-              for (let xOffset = -2; xOffset <= 2; xOffset += 0.8) {
-                const topFin = new THREE.Mesh(new THREE.BoxGeometry(0.025, span, 0.025), finMat)
+            zIndex = 0
+            for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 2.0, zIndex += 1) {
+              let xIndex = 0
+              for (let xOffset = -2; xOffset <= 2; xOffset += 0.8, xIndex += 1) {
+                const detailLevel = classifyPlacement(xOffset, CORRIDOR_HEIGHT + innerOffset, z)
+                if (detailLevel === DETAIL_CULLED) {
+                  continue
+                }
+
+                if (detailLevel === DETAIL_LOW && (zIndex + xIndex + layer) % 2 === 1) {
+                  continue
+                }
+
+                const thickness = detailLevel === DETAIL_HIGH ? 0.025 : 0.018
+
+                const topFin = new THREE.Mesh(new THREE.BoxGeometry(thickness, span, thickness), finMat)
                 topFin.position.set(xOffset, CORRIDOR_HEIGHT + innerOffset + span / 2, z)
                 connectorGroup.add(topFin)
 
-                const bottomFin = new THREE.Mesh(new THREE.BoxGeometry(0.025, span, 0.025), finMat)
+                const bottomFin = new THREE.Mesh(new THREE.BoxGeometry(thickness, span, thickness), finMat)
                 bottomFin.position.set(xOffset, -CORRIDOR_HEIGHT + 2 - innerOffset - span / 2, z)
                 connectorGroup.add(bottomFin)
               }
@@ -474,31 +560,65 @@ export default {
 
           return connectorGroup
         }
-        tesseractRoot.add(addInterLayerConnectors())
+        staticRoot.add(addInterLayerConnectors())
 
         const addBeams = () => {
           const beamGroup = new THREE.Group()
+          const pillarMat = beamMat(0x060606)
+          const crossBeamMat = beamMat(0x080808)
+          const depthBeamMat = beamMat(0x070707)
+          const frameMat = beamMat(0x0a0a0a)
 
-          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 4.5) {
+          let zIndex = 0
+          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 4.5, zIndex += 1) {
             for (const x of [-CORRIDOR_WIDTH - 0.2, CORRIDOR_WIDTH + 0.2]) {
-              const pillar = new THREE.Group()
-              const material = beamMat(0x060606)
-              pillar.add(new THREE.Mesh(new THREE.BoxGeometry(0.05, CORRIDOR_HEIGHT * 2 + 4, 0.15), material))
-              for (const flangeY of [-CORRIDOR_HEIGHT - 1.5, CORRIDOR_HEIGHT + 1.5]) {
-                const flange = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.22), material)
-                flange.position.y = flangeY
-                pillar.add(flange)
+              const detailLevel = classifyPlacement(x, 1.5, z)
+              if (detailLevel === DETAIL_CULLED) {
+                continue
               }
+
+              if (detailLevel === DETAIL_LOW && zIndex % 2 === 1) {
+                continue
+              }
+
+              const pillar = new THREE.Group()
+              pillar.add(
+                new THREE.Mesh(
+                  new THREE.BoxGeometry(0.05, CORRIDOR_HEIGHT * 2 + 4, detailLevel === DETAIL_HIGH ? 0.15 : 0.12),
+                  pillarMat,
+                ),
+              )
+
+              if (detailLevel === DETAIL_HIGH) {
+                for (const flangeY of [-CORRIDOR_HEIGHT - 1.5, CORRIDOR_HEIGHT + 1.5]) {
+                  const flange = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.22), pillarMat)
+                  flange.position.y = flangeY
+                  pillar.add(flange)
+                }
+              }
+
               pillar.position.set(x, 1.5, z)
               beamGroup.add(pillar)
             }
           }
 
-          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 5.5) {
-            for (let y = -CORRIDOR_HEIGHT + 2; y <= CORRIDOR_HEIGHT; y += 3.2) {
+          zIndex = 0
+          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 5.5, zIndex += 1) {
+            let yIndex = 0
+            for (let y = -CORRIDOR_HEIGHT + 2; y <= CORRIDOR_HEIGHT; y += 3.2, yIndex += 1) {
+              const detailLevel = classifyPlacement(0, y, z)
+              if (detailLevel === DETAIL_CULLED) {
+                continue
+              }
+
+              if (detailLevel === DETAIL_LOW && (zIndex + yIndex) % 2 === 1) {
+                continue
+              }
+
+              const thickness = detailLevel === DETAIL_HIGH ? 0.045 : 0.03
               const beam = new THREE.Mesh(
-                new THREE.BoxGeometry(CORRIDOR_WIDTH * 2 + 1, 0.045, 0.045),
-                beamMat(0x080808),
+                new THREE.BoxGeometry(CORRIDOR_WIDTH * 2 + 1, thickness, thickness),
+                crossBeamMat,
               )
               beam.position.set(0, y, z)
               beamGroup.add(beam)
@@ -514,15 +634,24 @@ export default {
           for (const [x, y] of cornerPositions) {
             const depthBeam = new THREE.Mesh(
               new THREE.BoxGeometry(0.06, 0.06, CORRIDOR_LENGTH * 2),
-              beamMat(0x070707),
+              depthBeamMat,
             )
             depthBeam.position.set(x, y, 0)
             beamGroup.add(depthBeam)
           }
 
-          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 4.0) {
+          zIndex = 0
+          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 4.0, zIndex += 1) {
+            const detailLevel = classifyPlacement(CORRIDOR_WIDTH + 4.5, 2, z)
+            if (detailLevel === DETAIL_CULLED) {
+              continue
+            }
+
+            if (detailLevel === DETAIL_LOW && zIndex % 2 === 1) {
+              continue
+            }
+
             const frame = new THREE.Group()
-            const material = beamMat(0x0a0a0a)
             const frameWidth = 3.5
             const frameHeight = 5
             const pieces = [
@@ -532,17 +661,20 @@ export default {
               [frameWidth / 2, 0, 0.06, frameHeight],
             ]
             for (const [x, y, width, height] of pieces) {
-              const edge = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.06), material)
+              const edge = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.06), frameMat)
               edge.position.set(x, y, 0)
               frame.add(edge)
             }
 
-            const diagonal = new THREE.Mesh(
-              new THREE.BoxGeometry(0.04, Math.sqrt(frameWidth * frameWidth + frameHeight * frameHeight), 0.04),
-              material,
-            )
-            diagonal.rotation.z = Math.atan2(frameHeight, frameWidth)
-            frame.add(diagonal)
+            if (detailLevel === DETAIL_HIGH) {
+              const diagonal = new THREE.Mesh(
+                new THREE.BoxGeometry(0.04, Math.sqrt(frameWidth * frameWidth + frameHeight * frameHeight), 0.04),
+                frameMat,
+              )
+              diagonal.rotation.z = Math.atan2(frameHeight, frameWidth)
+              frame.add(diagonal)
+            }
+
             frame.position.set(CORRIDOR_WIDTH + 4.5, 2, z)
             frame.rotation.y = -Math.PI / 2
             beamGroup.add(frame)
@@ -550,14 +682,35 @@ export default {
 
           return beamGroup
         }
-        tesseractRoot.add(addBeams())
+        staticRoot.add(addBeams())
 
         const addLightStrips = () => {
           const stripGroup = new THREE.Group()
+          const warmAccentMaterials = [
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0.62, 0.2, 0.03) }),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0.88, 0.32, 0.06) }),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.42, 0.09) }),
+          ]
+          const coolAccentMaterials = [
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0.08, 0.25, 0.52) }),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0.1, 0.38, 0.68) }),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0.15, 0.5, 0.82) }),
+          ]
 
-          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 0.9) {
-            const length = 0.8 + Math.random() * 0.15
-            const segment = new THREE.Mesh(new THREE.BoxGeometry(length, 0.025, 0.02), cyanGlowMat)
+          let zIndex = 0
+          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 0.9, zIndex += 1) {
+            const detailLevel = classifyPlacement(0, CORRIDOR_HEIGHT + 0.3, z)
+            if (detailLevel === DETAIL_CULLED) {
+              continue
+            }
+
+            if (detailLevel === DETAIL_LOW && zIndex % 3 !== 0) {
+              continue
+            }
+
+            const length = 0.78 + Math.random() * 0.18
+            const thickness = detailLevel === DETAIL_HIGH ? 0.025 : 0.018
+            const segment = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, 0.02), cyanGlowMat)
             segment.position.set(-CORRIDOR_WIDTH * 0.2, CORRIDOR_HEIGHT + 0.3, z)
             stripGroup.add(segment)
 
@@ -566,27 +719,36 @@ export default {
             stripGroup.add(segmentMirror)
           }
 
-          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 1.4) {
-            const warmStrip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1.3), orangeGlowMat)
+          zIndex = 0
+          for (let z = -CORRIDOR_LENGTH; z <= CORRIDOR_LENGTH; z += 1.4, zIndex += 1) {
+            const detailLevel = classifyPlacement(0, -CORRIDOR_HEIGHT + 2.4, z)
+            if (detailLevel === DETAIL_CULLED) {
+              continue
+            }
+
+            if (detailLevel === DETAIL_LOW && zIndex % 2 === 1) {
+              continue
+            }
+
+            const stripWidth = detailLevel === DETAIL_HIGH ? 0.02 : 0.016
+            const stripLength = detailLevel === DETAIL_HIGH ? 1.3 : 0.95
+            const warmStrip = new THREE.Mesh(new THREE.BoxGeometry(stripWidth, stripWidth, stripLength), orangeGlowMat)
             warmStrip.position.set(-CORRIDOR_WIDTH + 0.2, -CORRIDOR_HEIGHT + 2.4, z)
             stripGroup.add(warmStrip)
 
-            const dimStrip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1.3), dimWarmMat)
+            const dimStrip = new THREE.Mesh(new THREE.BoxGeometry(stripWidth, stripWidth, stripLength), dimWarmMat)
             dimStrip.position.set(CORRIDOR_WIDTH - 0.2, -CORRIDOR_HEIGHT + 2.4, z)
             stripGroup.add(dimStrip)
           }
 
-          for (let index = 0; index < 80; index += 1) {
+          for (let index = 0; index < 72; index += 1) {
             const isWarm = Math.random() > 0.3
-            const mat = new THREE.MeshBasicMaterial({
-              color: isWarm
-                ? new THREE.Color(0.6 + Math.random() * 0.4, 0.15 + Math.random() * 0.15, 0.01)
-                : new THREE.Color(0.08, 0.25 + Math.random() * 0.2, 0.5 + Math.random() * 0.3),
-            })
+            const matPool = isWarm ? warmAccentMaterials : coolAccentMaterials
+            const mat = matPool[Math.floor(Math.random() * matPool.length)]
 
             const wall = Math.floor(Math.random() * 4)
-            const zPos = (Math.random() - 0.5) * CORRIDOR_LENGTH * 1.5
-            const length = 0.5 + Math.random() * 2
+            const zPos = (Math.random() - 0.5) * CORRIDOR_LENGTH * 1.35
+            const length = 0.45 + Math.random() * 1.65
             let accent = null
 
             if (wall < 2) {
@@ -607,12 +769,25 @@ export default {
               )
             }
 
+            const detailLevel = classifyPlacement(
+              accent.position.x,
+              accent.position.y,
+              accent.position.z,
+            )
+            if (detailLevel === DETAIL_CULLED) {
+              continue
+            }
+
+            if (detailLevel === DETAIL_LOW && index % 2 === 1) {
+              continue
+            }
+
             stripGroup.add(accent)
           }
 
           return stripGroup
         }
-        tesseractRoot.add(addLightStrips())
+        staticRoot.add(addLightStrips())
 
         cooper = buildCooper()
         cooper.position.set(0.4, 2.5, 2.5)
@@ -673,7 +848,7 @@ export default {
         }
         window.addEventListener('mousemove', mouseOrbitHandler, true)
 
-        tesseractRoot.add(new THREE.AmbientLight(0x080818, 0.4))
+        staticRoot.add(new THREE.AmbientLight(0x080818, 0.4))
 
         keyLight = new THREE.PointLight(0xffeedd, 12, 22)
         keyLight.position.set(0.5, 7, 3)
@@ -681,30 +856,30 @@ export default {
 
         const fillLight = new THREE.PointLight(0x3355aa, 5, 18)
         fillLight.position.set(-5, -1, 2)
-        tesseractRoot.add(fillLight)
+        staticRoot.add(fillLight)
 
         const rimLight = new THREE.PointLight(0xffeebb, 8, 15)
         rimLight.position.set(-1.5, 4, -5)
-        tesseractRoot.add(rimLight)
+        staticRoot.add(rimLight)
 
         const cyanLight = new THREE.PointLight(0x44aaff, 6, 30)
         cyanLight.position.set(-1, CORRIDOR_HEIGHT + 2, -3)
-        tesseractRoot.add(cyanLight)
+        staticRoot.add(cyanLight)
 
         const warmLight1 = new THREE.PointLight(0xff7733, 4, 20)
         warmLight1.position.set(-CORRIDOR_WIDTH + 1, 2, 3)
-        tesseractRoot.add(warmLight1)
+        staticRoot.add(warmLight1)
 
         const warmLight2 = new THREE.PointLight(0xff6611, 3, 18)
         warmLight2.position.set(CORRIDOR_WIDTH - 1, 1, -2)
-        tesseractRoot.add(warmLight2)
+        staticRoot.add(warmLight2)
 
         const spot = new THREE.SpotLight(0xffffff, 15, 25, Math.PI / 7, 0.6, 1.5)
         spot.position.set(0.5, 9, 3)
         spot.target = cooper
-        tesseractRoot.add(spot)
+        staticRoot.add(spot)
 
-        for (let index = 0; index < 30; index += 1) {
+        for (let index = 0; index < 20; index += 1) {
           const warm = Math.random() > 0.4
           const randomLight = new THREE.PointLight(
             warm
@@ -718,8 +893,20 @@ export default {
             Math.random() * 14 - 3,
             (Math.random() - 0.5) * 40,
           )
-          tesseractRoot.add(randomLight)
+          TMP_DISTANCE_SAMPLE.copy(randomLight.position)
+          if (cameraCullOrigin.distanceToSquared(TMP_DISTANCE_SAMPLE) > LIGHT_HIGH_DETAIL_RADIUS_SQ) {
+            continue
+          }
+
+          staticRoot.add(randomLight)
         }
+
+        // Keep the static hierarchy from recomputing local matrices each frame.
+        staticRoot.updateMatrixWorld(true)
+        staticRoot.traverse((object) => {
+          object.matrixAutoUpdate = false
+          object.updateMatrix()
+        })
 
         startElapsed = null
       },
@@ -771,6 +958,7 @@ export default {
         }
 
         group = null
+        staticRoot = null
         cooper = null
         keyLight = null
         startElapsed = null

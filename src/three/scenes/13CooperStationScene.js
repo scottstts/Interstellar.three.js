@@ -8,6 +8,7 @@ const STATION_EXTENSION_OFFSET_Z = STATION_BASE_LENGTH / 2
 const CYLINDER_SEGMENTS = 128
 const LENGTH_SEGMENTS = 64
 const HOUSE_NEIGHBORHOOD_CLUSTER_COUNT = 60
+const REFERENCE_SKY_COLOR = 0xd4cebd
 const CAMERA_INIT_POSITION = new THREE.Vector3(0, -600, -STATION_BASE_LENGTH * 0.35)
 const CAMERA_INIT_LOOK_AT = new THREE.Vector3(0, -800, 0)
 
@@ -259,6 +260,22 @@ export default {
             });
         }
 
+        function createRadialGlowTexture(size, color, alphaStops) {
+            const tex = createCanvasTexture(size, size, (ctx, w, h) => {
+                const cx = w * 0.5;
+                const cy = h * 0.5;
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.5);
+                for (const [stop, alpha] of alphaStops) {
+                    grad.addColorStop(stop, `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`);
+                }
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+            });
+            tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return tex;
+        }
+
 
         // -- Build cylinder ground (inside of station) --
         function buildGround() {
@@ -294,40 +311,81 @@ export default {
         // -- End caps - bright sun-like glowing discs --
         function buildEndCaps() {
             const group = new THREE.Group();
+            const glowColor = { r: 255, g: 247, b: 232 };
+            const coreMistMap = createRadialGlowTexture(1024, glowColor, [
+                [0, 1],
+                [0.2, 0.92],
+                [0.5, 0.45],
+                [0.85, 0.08],
+                [1, 0],
+            ]);
+            const wideMistMap = createRadialGlowTexture(1024, glowColor, [
+                [0, 0.72],
+                [0.28, 0.42],
+                [0.65, 0.14],
+                [1, 0],
+            ]);
 
             for (let side = -1; side <= 1; side += 2) {
-                // Bright glowing disc (like sunlight coming through)
-                const discGeo = new THREE.CircleGeometry(STATION_RADIUS * 1.0, 64);
+                const endZ = side * STATION_LENGTH / 2;
+
+                const discGeo = new THREE.CircleGeometry(STATION_RADIUS * 0.75, 96);
                 const discMat = new THREE.MeshBasicMaterial({
-                    color: 0xfff8e0,
+                    color: 0xffffff,
                     side: THREE.DoubleSide,
+                    toneMapped: false,
                 });
                 const disc = new THREE.Mesh(discGeo, discMat);
-                disc.position.z = side * STATION_LENGTH / 2;
+                disc.position.z = endZ;
                 group.add(disc);
 
-                // Slightly smaller brighter core
-                const coreGeo = new THREE.CircleGeometry(STATION_RADIUS * 0.6, 64);
-                const coreMat = new THREE.MeshBasicMaterial({
-                    color: 0xfffffa,
-                    side: THREE.DoubleSide,
-                });
-                const core = new THREE.Mesh(coreGeo, coreMat);
-                core.position.z = side * STATION_LENGTH / 2 + side * -2;
-                group.add(core);
-
-                // Soft glow halo
-                const haloGeo = new THREE.CircleGeometry(STATION_RADIUS * 1.3, 64);
-                const haloMat = new THREE.MeshBasicMaterial({
-                    color: 0xfff4cc,
+                const coreMistGeo = new THREE.CircleGeometry(STATION_RADIUS * 1.6, 96);
+                const coreMistMat = new THREE.MeshBasicMaterial({
+                    map: coreMistMap,
+                    color: 0xfff6e8,
                     transparent: true,
-                    opacity: 0.3,
+                    opacity: 0.95,
                     side: THREE.DoubleSide,
                     depthWrite: false,
+                    depthTest: false,
+                    blending: THREE.AdditiveBlending,
+                    toneMapped: false,
                 });
-                const halo = new THREE.Mesh(haloGeo, haloMat);
-                halo.position.z = side * STATION_LENGTH / 2 + side * 5;
-                group.add(halo);
+                const coreMist = new THREE.Mesh(coreMistGeo, coreMistMat);
+                coreMist.position.z = endZ - side * 20;
+                group.add(coreMist);
+
+                const midMistGeo = new THREE.CircleGeometry(STATION_RADIUS * 2.3, 96);
+                const midMistMat = new THREE.MeshBasicMaterial({
+                    map: wideMistMap,
+                    color: 0xf4e5c9,
+                    transparent: true,
+                    opacity: 0.62,
+                    side: THREE.DoubleSide,
+                    depthWrite: false,
+                    depthTest: false,
+                    blending: THREE.AdditiveBlending,
+                    toneMapped: false,
+                });
+                const midMist = new THREE.Mesh(midMistGeo, midMistMat);
+                midMist.position.z = endZ - side * 95;
+                group.add(midMist);
+
+                const outerMistGeo = new THREE.CircleGeometry(STATION_RADIUS * 3.1, 96);
+                const outerMistMat = new THREE.MeshBasicMaterial({
+                    map: wideMistMap,
+                    color: 0xeedbb8,
+                    transparent: true,
+                    opacity: 0.35,
+                    side: THREE.DoubleSide,
+                    depthWrite: false,
+                    depthTest: false,
+                    blending: THREE.AdditiveBlending,
+                    toneMapped: false,
+                });
+                const outerMist = new THREE.Mesh(outerMistGeo, outerMistMat);
+                outerMist.position.z = endZ - side * 220;
+                group.add(outerMist);
             }
 
             sceneGroup.add(group);
@@ -611,10 +669,10 @@ export default {
             }
             hazeGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             const hazeMat = new THREE.PointsMaterial({
-                color: 0xddeeff,
+                color: 0xf1e6d3,
                 size: 2,
                 transparent: true,
-                opacity: 0.05,
+                opacity: 0.065,
                 depthWrite: false
             });
             const haze = new THREE.Points(hazeGeo, hazeMat);
@@ -624,58 +682,28 @@ export default {
 
         // -- Lighting setup (realistic sunlight from end of cylinder) --
         function setupLighting() {
-            // Main directional light (sunlight entering from end)
-            const sunLight = new THREE.DirectionalLight(0xfff4e0, 2.5);
-            sunLight.position.set(0, 200, -STATION_LENGTH / 2 - 500);
-            sunLight.target.position.set(0, 0, 0);
+            const sunLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+            sunLight.position.set(0, STATION_RADIUS * 0.6, -STATION_LENGTH * 0.5);
+            sunLight.target.position.set(0, -STATION_RADIUS, -100);
             sceneGroup.add(sunLight);
             sceneGroup.add(sunLight.target);
 
-            // Secondary fill from opposite end
-            const fillLight = new THREE.DirectionalLight(0xe8e0d0, 0.8);
-            fillLight.position.set(0, 100, STATION_LENGTH / 2 + 300);
+            const fillLight = new THREE.DirectionalLight(0xfff2dd, 1.8);
+            fillLight.position.set(0, STATION_RADIUS * 0.6, STATION_LENGTH * 0.5);
+            fillLight.target.position.set(0, -STATION_RADIUS, 100);
             sceneGroup.add(fillLight);
+            sceneGroup.add(fillLight.target);
 
-            // Ambient (scattered light inside station)
-            const ambient = new THREE.AmbientLight(0x8899aa, 0.5);
+            const ambient = new THREE.AmbientLight(0xfff5e6, 0.45);
             sceneGroup.add(ambient);
 
-            // Hemisphere light (sky-ground simulation)
-            const hemi = new THREE.HemisphereLight(0x87ceeb, 0x4a7a2e, 0.6);
+            const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.35);
             sceneGroup.add(hemi);
-
-            // Point lights along the central axis (simulating the light tube)
-            for (let i = -4; i <= 4; i++) {
-                const pl = new THREE.PointLight(0xfff8e8, 80, STATION_RADIUS * 2);
-                pl.position.set(0, 0, i * STATION_LENGTH / 9);
-                sceneGroup.add(pl);
-            }
-
-            // Warm light at the ends (window glow)
-            for (let side = -1; side <= 1; side += 2) {
-                const endLight = new THREE.SpotLight(0xfff0cc, 150, STATION_LENGTH, Math.PI / 3);
-                endLight.position.set(0, 0, side * (STATION_LENGTH / 2 + 100));
-                endLight.target.position.set(0, 0, 0);
-                sceneGroup.add(endLight);
-                sceneGroup.add(endLight.target);
-            }
         }
 
         // -- Sky / background --
         function buildSkybox() {
-            // Dark blue gradient background simulating the visible sky through station
-            const skyCanvas = document.createElement('canvas');
-            skyCanvas.width = 2; skyCanvas.height = 512;
-            const sCtx = skyCanvas.getContext('2d');
-            const grad = sCtx.createLinearGradient(0, 0, 0, 512);
-            grad.addColorStop(0, '#1a2a4a');
-            grad.addColorStop(0.3, '#3a5a8a');
-            grad.addColorStop(0.5, '#6a8aba');
-            grad.addColorStop(0.7, '#8aaacc');
-            grad.addColorStop(1, '#aaccee');
-            sCtx.fillStyle = grad;
-            sCtx.fillRect(0, 0, 2, 512);
-            sceneRef.background = new THREE.Color(0x5a7a9a);
+            sceneRef.background = new THREE.Color(REFERENCE_SKY_COLOR);
         }
 
         // -- Lampposts along roads --
@@ -1225,8 +1253,8 @@ export default {
           fov: cameraRef.fov,
         }
 
-        sceneRef.fog = new THREE.FogExp2(0x8faacc, 0.00012)
-        sceneRef.background = new THREE.Color(0x5a7a9a)
+        sceneRef.fog = new THREE.FogExp2(REFERENCE_SKY_COLOR, 0.00015)
+        sceneRef.background = new THREE.Color(REFERENCE_SKY_COLOR)
 
         if (rendererRef) {
           rendererRef.toneMappingExposure = 1.1
