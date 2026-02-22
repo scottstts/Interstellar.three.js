@@ -5,6 +5,12 @@ const CORRIDOR_WIDTH = 5.5
 const CORRIDOR_HEIGHT = 7.0
 const CORRIDOR_LENGTH = 60
 const BASE_PITCH = 2.1
+const MOVEMENT_KEY_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'])
+const MAX_ORBIT_PITCH = Math.PI / 2 - 0.05
+const MIN_ORBIT_RADIUS = 0.001
+const TMP_COOPER_FOCUS = new THREE.Vector3()
+const TMP_CAMERA_ORBIT_OFFSET = new THREE.Vector3()
+const COOPER_FOCUS_BOX = new THREE.Box3()
 
 function createBookSpineTexture(seed) {
   const canvas = document.createElement('canvas')
@@ -224,6 +230,13 @@ export default {
     let previousBackground = null
     let previousFog = null
     let previousToneMappingExposure = null
+    let movementKeyBlockHandler = null
+    let mouseOrbitHandler = null
+    const orbitState = {
+      pitch: 0,
+      radius: 0,
+      yaw: 0,
+    }
 
     return {
       init({ root, camera, renderer, scene }) {
@@ -608,6 +621,58 @@ export default {
         cooper.rotation.x = -0.08
         tesseractRoot.add(cooper)
 
+        COOPER_FOCUS_BOX.setFromObject(cooper)
+        COOPER_FOCUS_BOX.getCenter(TMP_COOPER_FOCUS)
+        TMP_CAMERA_ORBIT_OFFSET.copy(camera.position).sub(TMP_COOPER_FOCUS)
+        orbitState.radius = Math.max(TMP_CAMERA_ORBIT_OFFSET.length(), MIN_ORBIT_RADIUS)
+        orbitState.yaw = Math.atan2(TMP_CAMERA_ORBIT_OFFSET.x, TMP_CAMERA_ORBIT_OFFSET.z)
+        orbitState.pitch = THREE.MathUtils.clamp(
+          Math.atan2(
+            TMP_CAMERA_ORBIT_OFFSET.y,
+            Math.max(
+              Math.hypot(TMP_CAMERA_ORBIT_OFFSET.x, TMP_CAMERA_ORBIT_OFFSET.z),
+              MIN_ORBIT_RADIUS,
+            ),
+          ),
+          -MAX_ORBIT_PITCH,
+          MAX_ORBIT_PITCH,
+        )
+
+        movementKeyBlockHandler = (event) => {
+          if (!MOVEMENT_KEY_CODES.has(event.code)) {
+            return
+          }
+
+          if (document.pointerLockElement === renderer?.domElement) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation()
+            }
+          }
+        }
+        window.addEventListener('keydown', movementKeyBlockHandler, true)
+
+        mouseOrbitHandler = (event) => {
+          if (document.pointerLockElement !== renderer?.domElement) {
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation()
+          }
+
+          orbitState.yaw -= event.movementX * 0.0022
+          orbitState.pitch = THREE.MathUtils.clamp(
+            orbitState.pitch + event.movementY * 0.0018,
+            -MAX_ORBIT_PITCH,
+            MAX_ORBIT_PITCH,
+          )
+        }
+        window.addEventListener('mousemove', mouseOrbitHandler, true)
+
         tesseractRoot.add(new THREE.AmbientLight(0x080818, 0.4))
 
         keyLight = new THREE.PointLight(0xffeedd, 12, 22)
@@ -659,8 +724,8 @@ export default {
         startElapsed = null
       },
 
-      update({ elapsed }) {
-        if (!cooper || !keyLight) {
+      update({ camera, elapsed }) {
+        if (!camera || !cooper || !keyLight) {
           return
         }
 
@@ -673,11 +738,34 @@ export default {
         cooper.rotation.z = 0.12 + Math.sin(t * 0.27) * 0.04
         cooper.rotation.x = -0.08 + Math.cos(t * 0.22) * 0.025
         keyLight.position.x = 0.5 + Math.sin(t * 0.17) * 0.6
+
+        COOPER_FOCUS_BOX.setFromObject(cooper)
+        COOPER_FOCUS_BOX.getCenter(TMP_COOPER_FOCUS)
+
+        const orbitHorizontal = Math.cos(orbitState.pitch) * orbitState.radius
+        TMP_CAMERA_ORBIT_OFFSET.set(
+          Math.sin(orbitState.yaw) * orbitHorizontal,
+          Math.sin(orbitState.pitch) * orbitState.radius,
+          Math.cos(orbitState.yaw) * orbitHorizontal,
+        )
+
+        camera.position.copy(TMP_COOPER_FOCUS).add(TMP_CAMERA_ORBIT_OFFSET)
+        camera.lookAt(TMP_COOPER_FOCUS)
       },
 
       resize() {},
 
       dispose({ scene, renderer }) {
+        if (movementKeyBlockHandler) {
+          window.removeEventListener('keydown', movementKeyBlockHandler, true)
+          movementKeyBlockHandler = null
+        }
+
+        if (mouseOrbitHandler) {
+          window.removeEventListener('mousemove', mouseOrbitHandler, true)
+          mouseOrbitHandler = null
+        }
+
         if (group) {
           disposeObject3D(group)
         }
@@ -686,6 +774,9 @@ export default {
         cooper = null
         keyLight = null
         startElapsed = null
+        orbitState.radius = 0
+        orbitState.yaw = 0
+        orbitState.pitch = 0
 
         if (scene) {
           scene.background = previousBackground
