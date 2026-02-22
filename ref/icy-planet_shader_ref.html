@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Icy Planet — TSL Surface Shader</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(160, 220, 255, 0.5);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+    #webgpu-error {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      color: #6af;
+      font-family: monospace;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px;
+    }
+  </style>
+</head>
+<body>
+<div id="info">Icy Planet &mdash; Procedural Surface &mdash; Drag to rotate</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.172.0/webgpu';
+import { MeshStandardNodeMaterial } from 'https://esm.sh/three@0.172.0/webgpu';
+import { OrbitControls } from 'https://esm.sh/three@0.172.0/addons/controls/OrbitControls.js';
+
+import {
+  abs, clamp, mix, smoothstep,
+  vec3, vec4, float,
+  positionLocal,
+  mx_fractal_noise_float,
+} from 'https://esm.sh/three@0.172.0/tsl';
+
+// ─────────────────────────────────────────────
+// Renderer
+// ─────────────────────────────────────────────
+const renderer = new THREE.WebGPURenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// ─────────────────────────────────────────────
+// Scene / Camera
+// ─────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000005);
+
+// Subtle starfield
+const starGeo = new THREE.BufferGeometry();
+const starCount = 3000;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) {
+  starPositions[i] = (Math.random() - 0.5) * 800;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, sizeAttenuation: true });
+scene.add(new THREE.Points(starGeo, starMat));
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 3.5);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.04;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.3;
+controls.minDistance = 1.8;
+controls.maxDistance = 10;
+
+// ─────────────────────────────────────────────
+// Lighting  (single "sun" point light + ambient)
+// ─────────────────────────────────────────────
+const sunLight = new THREE.DirectionalLight(0xd0eeff, 4.0);
+sunLight.position.set(6, 2, 4);
+scene.add(sunLight);
+
+const ambientLight = new THREE.AmbientLight(0x0a1828, 0.8);
+scene.add(ambientLight);
+
+// ─────────────────────────────────────────────
+// Helper: remap noise [-1,1] → [0,1]
+// ─────────────────────────────────────────────
+const remap01 = (n) => n.mul(0.5).add(0.5);
+
+// ─────────────────────────────────────────────
+// TSL: Icy Surface Shader
+// ─────────────────────────────────────────────
+const mat = new MeshStandardNodeMaterial();
+
+// All procedural work is done in localPosition space so the shader
+// stays stable as the planet rotates.
+const p = positionLocal.normalize(); // unit sphere position = 3D UV
+
+// ── Noise layers ───────────────────────────────────────────────────────────
+// Large continents of ice vs exposed sub-surface ocean
+const nContinent = remap01(mx_fractal_noise_float(p.mul(1.8), 4, 2.0, 0.5));
+
+// Medium-scale ice sheet texture (ridges, pressure deformations)
+const nSheet   = remap01(mx_fractal_noise_float(p.mul(5.5), 5, 2.1, 0.48));
+
+// Fine-scale frost / snow crystalline surface
+const nFrost   = remap01(mx_fractal_noise_float(p.mul(14.0), 4, 2.0, 0.45));
+
+// Crack / fracture pattern — we use the raw noise and look for near-zero
+// crossings which form narrow vein-like structures.
+const nCrack   = remap01(mx_fractal_noise_float(p.mul(22.0), 3, 2.3, 0.5));
+const nCrack2  = remap01(mx_fractal_noise_float(p.mul(40.0), 2, 2.0, 0.5));
+
+// Polar cap gradient: based on abs(y) of normalised position
+const lat      = abs(p.y); // 0=equator, 1=pole
+const polarCap = smoothstep(0.35, 0.75, lat);
+
+// ── Ice coverage mask ──────────────────────────────────────────────────────
+// Continents + polar boost determine how frozen a region is
+const iceMask  = clamp(
+  smoothstep(0.38, 0.62, nContinent).add(polarCap.mul(0.5)),
+  float(0),
+  float(1)
+);
+
+// ── Crack masks ────────────────────────────────────────────────────────────
+// Cracks appear where ice is present but not at the poles
+// A crack is where nCrack is near 0.5 (zero-crossing of signed noise).
+// abs(nCrack - 0.5) * 2  →  0 at crack center, 1 away from it.
+const crackDist  = abs(nCrack.sub(0.5)).mul(2.0);
+const crackDist2 = abs(nCrack2.sub(0.5)).mul(2.0);
+
+// Primary cracks (wider, deeper)
+const crackLine1 = smoothstep(0.0, 0.12, crackDist);    // 0=in crack, 1=outside
+// Secondary hairline cracks
+const crackLine2 = smoothstep(0.0, 0.06, crackDist2);
+
+// Combine: only crack where ice exists and not at deep polar cap
+const crackZone  = iceMask.mul(polarCap.oneMinus().add(0.3).clamp(0, 1));
+const finalCrack = mix(float(1.0), crackLine1, crackZone.mul(0.9))
+                     .mul(mix(float(1.0), crackLine2, crackZone.mul(0.6)));
+
+// ── Colours ────────────────────────────────────────────────────────────────
+const colOcean      = vec3(0.010, 0.060, 0.140);  // dark sub-ice ocean
+const colDeepIce    = vec3(0.080, 0.210, 0.420);  // blue deep ice
+const colIce        = vec3(0.480, 0.760, 0.920);  // classic ice blue
+const colSnow       = vec3(0.880, 0.950, 1.000);  // bright snow white
+const colPolarSnow  = vec3(0.960, 0.985, 1.000);  // pristine polar white
+const colCrack      = vec3(0.005, 0.030, 0.090);  // very dark crack interior
+const colCrackGlow  = vec3(0.020, 0.120, 0.260);  // subtle cyan inner crack glow
+
+// 1. Start with ocean
+let surfaceColor = colOcean.toVar();
+
+// 2. Mix in ice based on coverage
+surfaceColor = mix(surfaceColor, mix(colDeepIce, colIce, nSheet), iceMask);
+
+// 3. Frost / snow on top of ice (where fine-noise is high)
+const frostFactor = smoothstep(0.52, 0.78, nFrost).mul(iceMask);
+surfaceColor = mix(surfaceColor, colSnow, frostFactor);
+
+// 4. Extra white at polar caps
+surfaceColor = mix(surfaceColor, colPolarSnow, polarCap.mul(0.85));
+
+// 5. Crack coloring: interior glow + dark void
+const crackInterior = mix(colCrack, colCrackGlow, smoothstep(0.0, 0.08, crackDist));
+surfaceColor = mix(crackInterior, surfaceColor, finalCrack);
+
+// ── PBR properties ─────────────────────────────────────────────────────────
+// Roughness: smooth polished ice where iceMask high & no cracks,
+//            rough/cracked surfaces elsewhere.
+const roughBase  = mix(float(0.85), float(0.08), iceMask);        // ocean rough, ice smooth
+const roughCrack = finalCrack.oneMinus().mul(0.55);               // cracks add roughness
+const roughSnow  = frostFactor.mul(0.35);                         // snow adds roughness
+const roughness  = clamp(roughBase.add(roughCrack).add(roughSnow), float(0.04), float(0.95));
+
+// Metalness: ice can look slightly metallic/specular
+const metalness  = mix(float(0.0), float(0.05), iceMask.mul(finalCrack));
+
+// ── Assign to material ─────────────────────────────────────────────────────
+mat.colorNode     = vec4(surfaceColor, float(1.0));
+mat.roughnessNode = roughness;
+mat.metalnessNode = metalness;
+
+// ─────────────────────────────────────────────
+// Geometry — high-poly sphere
+// ─────────────────────────────────────────────
+const geo    = new THREE.SphereGeometry(1, 256, 128);
+const planet = new THREE.Mesh(geo, mat);
+// Tilt like a real planet
+planet.rotation.z = THREE.MathUtils.degToRad(23.5);
+scene.add(planet);
+
+// ─────────────────────────────────────────────
+// Resize handler
+// ─────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─────────────────────────────────────────────
+// Render loop
+// ─────────────────────────────────────────────
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+</script>
+</body>
+</html>
