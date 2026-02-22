@@ -1103,8 +1103,8 @@ export default {
     }
 
     function positionCamera(camera) {
-      camera.position.set(6895.770, 4931.842, 6170.045)
-      camera.lookAt(6480.178, 4737.868, 5281.418)
+      camera.position.set(6878.606, 4914.173, 6141.678)
+      camera.lookAt(6301.714, 4779.175, 5336.091)
     }
 
     function updateAtmosphereCenterUniform() {
