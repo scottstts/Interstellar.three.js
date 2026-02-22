@@ -52,6 +52,8 @@ const ATMOSPHERE_LIGHT_SAMPLES = 10
 const ATMOSPHERE_VISUAL_THICKNESS_BOOST = 1.7
 
 const SHIP_CAMERA_DISTANCE = 340
+const SHIP_STAGING_CAMERA_POSITION = new THREE.Vector3(6895.770, 4931.842, 6170.045)
+const SHIP_STAGING_CAMERA_LOOK_AT = new THREE.Vector3(6480.178, 4737.868, 5281.418)
 const ENDURANCE_OFFSET_RIGHT = 56
 const ENDURANCE_OFFSET_UP = -8
 const RANGER_OFFSET_RIGHT = -96
@@ -1124,16 +1126,16 @@ export default {
       animationState.dockPortWorld.add(enduranceShip.position)
     }
 
-    function positionShipsInCameraShot(camera) {
+    function positionShipsInSceneFrame() {
       if (!enduranceShip || !rangerShip) {
         return
       }
 
-      camera.getWorldDirection(TMP_VEC3_B).normalize()
+      TMP_VEC3_B.copy(SHIP_STAGING_CAMERA_LOOK_AT).sub(SHIP_STAGING_CAMERA_POSITION).normalize()
       TMP_VEC3_C.crossVectors(TMP_VEC3_B, UP_VECTOR).normalize()
       TMP_VEC3_D.crossVectors(TMP_VEC3_C, TMP_VEC3_B).normalize()
 
-      TMP_VEC3_E.copy(camera.position).addScaledVector(TMP_VEC3_B, SHIP_CAMERA_DISTANCE)
+      TMP_VEC3_E.copy(SHIP_STAGING_CAMERA_POSITION).addScaledVector(TMP_VEC3_B, SHIP_CAMERA_DISTANCE)
 
       enduranceShip.position.copy(TMP_VEC3_E)
       enduranceShip.position.addScaledVector(TMP_VEC3_C, ENDURANCE_OFFSET_RIGHT)
@@ -1303,7 +1305,7 @@ export default {
         enduranceShip = createDamagedEndurance()
         rangerShip = createRangerShipWithoutLandingLegs()
         sceneGroup.add(enduranceShip, rangerShip)
-        positionShipsInCameraShot(camera)
+        positionShipsInSceneFrame()
         initializeShipAnimationState()
       },
 
