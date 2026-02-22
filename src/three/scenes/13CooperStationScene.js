@@ -2,10 +2,13 @@ import * as THREE from 'three/webgpu'
 import { disposeObject3D } from '../utils/dispose'
 
 const STATION_RADIUS = 800
-const STATION_LENGTH = 4000
+const STATION_BASE_LENGTH = 4000
+const STATION_LENGTH = STATION_BASE_LENGTH * 2
+const STATION_EXTENSION_OFFSET_Z = STATION_BASE_LENGTH / 2
 const CYLINDER_SEGMENTS = 128
 const LENGTH_SEGMENTS = 64
-const CAMERA_INIT_POSITION = new THREE.Vector3(0, -600, -STATION_LENGTH * 0.35)
+const HOUSE_NEIGHBORHOOD_CLUSTER_COUNT = 60
+const CAMERA_INIT_POSITION = new THREE.Vector3(0, -600, -STATION_BASE_LENGTH * 0.35)
 const CAMERA_INIT_LOOK_AT = new THREE.Vector3(0, -800, 0)
 
 function seededRandom(seed) {
@@ -265,11 +268,11 @@ export default {
             );
 
             const groundTex = createGroundTexture();
-            groundTex.repeat.set(12, 3);
+            groundTex.repeat.set(12, 6);
             groundTex.colorSpace = THREE.SRGBColorSpace;
 
             const normalMap = createGroundNormalMap();
-            normalMap.repeat.set(12, 3);
+            normalMap.repeat.set(12, 6);
 
             const mat = new THREE.MeshStandardMaterial({
                 map: groundTex,
@@ -355,7 +358,7 @@ export default {
 
             // Neighborhood clusters (more, bigger spread)
             const neighborhoods = [];
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < HOUSE_NEIGHBORHOOD_CLUSTER_COUNT; i++) {
                 neighborhoods.push({
                     angle: r() * Math.PI * 2,
                     z: (r() - 0.5) * STATION_LENGTH * 0.85,
@@ -1207,6 +1210,7 @@ export default {
 
         sceneGroup = new THREE.Group()
         sceneGroup.name = 'cooper-station-group'
+        sceneGroup.position.z = STATION_EXTENSION_OFFSET_Z
         rootRef.add(sceneGroup)
 
         previousFog = sceneRef.fog
