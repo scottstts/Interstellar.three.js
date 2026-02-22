@@ -48,6 +48,16 @@ const ENDURANCE_POSITION = new THREE.Vector3(-7.5, 3, -43)
 const ENDURANCE_LIGHT_COLOR = 0xffe3ad
 const ENDURANCE_LIGHT_INTENSITY = 2.4
 const ENDURANCE_LIGHT_LAYER = 1
+const ENDURANCE_SPIN_SPEED = 0.2
+const MOVEMENT_KEY_CODES = new Set([
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'Space',
+  'ShiftLeft',
+  'ShiftRight',
+])
 
 const rotateAxis = Fn(([axisInput, angleInput]) => {
   const angle = float(angleInput).toVar()
@@ -726,10 +736,12 @@ export default {
     let previousEnvironment = null
     let cameraRef = null
     let previousCameraLayerMask = null
+    let movementKeyBlockHandler = null
+    let cameraLockedPosition = null
     let disposed = false
 
     return {
-      async init({ root, scene, camera }) {
+      async init({ root, scene, camera, renderer }) {
         disposed = false
         rootRef = root
         cameraRef = camera ?? null
@@ -743,6 +755,7 @@ export default {
           camera.layers.enable(ENDURANCE_LIGHT_LAYER)
           camera.position.copy(BLACK_HOLE_POSITION).add(BLACK_HOLE_CAMERA_OFFSET)
           camera.lookAt(BLACK_HOLE_POSITION)
+          cameraLockedPosition = camera.position.clone()
         }
 
         previousBackground = scene.background
@@ -788,14 +801,46 @@ export default {
         enduranceKeyLight.layers.set(ENDURANCE_LIGHT_LAYER)
         enduranceKeyLight.target = enduranceLightTarget
         group.add(enduranceKeyLight, enduranceLightTarget)
+
+        movementKeyBlockHandler = (event) => {
+          if (!MOVEMENT_KEY_CODES.has(event.code)) {
+            return
+          }
+
+          if (document.pointerLockElement === renderer?.domElement) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation()
+            }
+          }
+        }
+        window.addEventListener('keydown', movementKeyBlockHandler, true)
+        window.addEventListener('keyup', movementKeyBlockHandler, true)
       },
 
-      update() {},
+      update({ delta, camera }) {
+        if (!endurance) {
+          return
+        }
+
+        if (cameraLockedPosition && camera) {
+          camera.position.copy(cameraLockedPosition)
+        }
+
+        endurance.rotation.z += delta * ENDURANCE_SPIN_SPEED
+      },
 
       resize() {},
 
       dispose({ scene }) {
         disposed = true
+
+        if (movementKeyBlockHandler) {
+          window.removeEventListener('keydown', movementKeyBlockHandler, true)
+          window.removeEventListener('keyup', movementKeyBlockHandler, true)
+          movementKeyBlockHandler = null
+        }
 
         if (scene) {
           scene.background = previousBackground ?? new THREE.Color(SPACE_BACKGROUND_COLOR)
@@ -832,6 +877,7 @@ export default {
         previousEnvironment = null
         cameraRef = null
         previousCameraLayerMask = null
+        cameraLockedPosition = null
       },
     }
   },
