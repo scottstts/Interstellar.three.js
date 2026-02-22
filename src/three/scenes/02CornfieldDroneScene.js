@@ -1,6 +1,30 @@
 import * as THREE from 'three/webgpu'
 import { disposeObject3D } from '../utils/dispose'
 
+const CORNFIELD_CAMERA_GROUND_CLEARANCE = 0.75
+
+function getCornfieldGroundHeightAt(x, z) {
+  return (
+    Math.sin(x * 0.015 + z * 0.01) * 0.5 +
+    Math.sin(x * 0.04) * 0.15 +
+    Math.cos(z * 0.03) * 0.2
+  )
+}
+
+function clampCameraToCornfieldGround(camera) {
+  if (!camera) {
+    return
+  }
+
+  const surfaceY = getCornfieldGroundHeightAt(camera.position.x, camera.position.z)
+  const minimumY = surfaceY + CORNFIELD_CAMERA_GROUND_CLEARANCE
+
+  if (camera.position.y < minimumY) {
+    camera.position.y = minimumY
+    camera.updateMatrixWorld()
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Scene 02 – Cornfield Drone Chase                                   */
 /*  Cooper's truck plows through dense cornstalks chasing an Indian    */
@@ -60,6 +84,7 @@ export default {
         /* elevated cinematic vantage – lowered for more immersion */
         camera.position.set(20, 10, 60)
         camera.lookAt(0, 2, -20)
+        clampCameraToCornfieldGround(camera)
 
         buildTruckPath()
         buildSkyDome()
@@ -71,8 +96,10 @@ export default {
         buildLighting()
       },
 
-      update({ delta, elapsed }) {
+      update({ delta, elapsed, camera }) {
         if (!group) return
+
+        clampCameraToCornfieldGround(camera)
 
         /* advance truck — detect loop wrap and reset bent corn */
         const prevT = truckT

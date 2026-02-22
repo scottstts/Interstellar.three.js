@@ -5,6 +5,31 @@ const ROOM_WIDTH = 38
 const ROOM_DEPTH = 28
 const ROOM_HEIGHT = 10.5
 const WALL_THICKNESS = 0.45
+const CAMERA_ROOM_FLOOR_CLEARANCE = 0.35
+const CAMERA_ROOM_CEILING_CLEARANCE = 0.35
+const CAMERA_ROOM_WALL_CLEARANCE = 0.12
+
+function clampCameraToNasaRoom(camera) {
+  if (!camera) {
+    return
+  }
+
+  const minX = -ROOM_WIDTH * 0.5 + WALL_THICKNESS * 0.5 + CAMERA_ROOM_WALL_CLEARANCE
+  const maxX = ROOM_WIDTH * 0.5 - WALL_THICKNESS * 0.5 - CAMERA_ROOM_WALL_CLEARANCE
+  const minZ = -ROOM_DEPTH * 0.5 + WALL_THICKNESS * 0.5 + CAMERA_ROOM_WALL_CLEARANCE
+  const maxZ = ROOM_DEPTH * 0.5 - WALL_THICKNESS * 0.5 - CAMERA_ROOM_WALL_CLEARANCE
+  const minY = CAMERA_ROOM_FLOOR_CLEARANCE
+  const maxY = ROOM_HEIGHT - CAMERA_ROOM_CEILING_CLEARANCE
+
+  const nextX = THREE.MathUtils.clamp(camera.position.x, minX, maxX)
+  const nextY = THREE.MathUtils.clamp(camera.position.y, minY, maxY)
+  const nextZ = THREE.MathUtils.clamp(camera.position.z, minZ, maxZ)
+
+  if (nextX !== camera.position.x || nextY !== camera.position.y || nextZ !== camera.position.z) {
+    camera.position.set(nextX, nextY, nextZ)
+    camera.updateMatrixWorld()
+  }
+}
 
 function createRng(seed) {
   let value = seed >>> 0
@@ -521,6 +546,7 @@ const NasaFacilityScene = {
 
         camera.position.set(6, 3.45, 9)
         camera.lookAt(2.5, 2.2, -2.6)
+        clampCameraToNasaRoom(camera)
 
         const room = new THREE.Group()
         room.name = 'nasa-meeting-room'
@@ -972,10 +998,12 @@ const NasaFacilityScene = {
         state.dust = dust
       },
 
-      update({ delta, elapsed }) {
+      update({ delta, elapsed, camera }) {
         if (!state.group) {
           return
         }
+
+        clampCameraToNasaRoom(camera)
 
         for (const strip of state.fluorescents) {
           const baseWave = 0.985 + Math.sin(elapsed * 0.62 + strip.phase + state.timeOffset) * 0.025

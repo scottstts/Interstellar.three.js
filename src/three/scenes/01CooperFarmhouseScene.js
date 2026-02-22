@@ -4,6 +4,10 @@ import { disposeObject3D } from '../utils/dispose'
 const SCENE_ID = 'cooper-farmhouse-intro'
 const SCENE_TITLE = 'Cooper Farmhouse and Cornfield Intro'
 const TAU = Math.PI * 2
+const FARMHOUSE_CAMERA_GROUND_CLEARANCE = 0.7
+const FARMHOUSE_ROAD_HALF_WIDTH = 5.9
+const FARMHOUSE_ROAD_Z_MIN = -196
+const FARMHOUSE_ROAD_Z_MAX = 28
 const INSTANCE_DUMMY = new THREE.Object3D()
 const TEMP_FORWARD = new THREE.Vector3()
 const TEMP_SIDE = new THREE.Vector3()
@@ -14,6 +18,50 @@ function createSeededRandom(seed) {
   return () => {
     state = (1664525 * state + 1013904223) >>> 0
     return state / 4294967296
+  }
+}
+
+function getFarmhouseTerrainHeightAt(x, z) {
+  const roadCenter = Math.sin(z * 0.055) * 1.55
+  const roadReach = Math.max(0, 1 - Math.abs(z + 84) / 290)
+  const roadCut = Math.exp(-Math.pow((x - roadCenter) / 8.1, 2)) * 0.34 * roadReach
+  const rolling = Math.sin((x + 28) * 0.024) * 0.68 + Math.cos((z - 36) * 0.019) * 0.54
+  const macro = Math.sin((x - 170) * 0.0048) * 0.34 + Math.cos((z + 120) * 0.0052) * 0.32
+  const furrows = Math.sin((x * 0.9 + z * 0.24) * 0.14) * 0.1
+  return rolling + macro + furrows - roadCut - 0.45
+}
+
+function getFarmhouseRoadHeightAt(x, z) {
+  if (z < FARMHOUSE_ROAD_Z_MIN || z > FARMHOUSE_ROAD_Z_MAX) {
+    return -Infinity
+  }
+
+  const meander = Math.sin(z * 0.055) * 1.55
+  const localX = x - meander
+  if (Math.abs(localX) > FARMHOUSE_ROAD_HALF_WIDTH) {
+    return -Infinity
+  }
+
+  const crown = Math.cos(localX * 0.7) * 0.06
+  const rut = Math.exp(-Math.pow((Math.abs(localX) - 2.05) / 0.55, 2)) * -0.045
+  return 0.08 + crown + rut
+}
+
+function clampCameraToFarmhouseGround(camera) {
+  if (!camera) {
+    return
+  }
+
+  const x = camera.position.x
+  const z = camera.position.z
+  const terrainY = getFarmhouseTerrainHeightAt(x, z)
+  const roadY = getFarmhouseRoadHeightAt(x, z)
+  const surfaceY = Math.max(terrainY, roadY)
+  const minimumY = surfaceY + FARMHOUSE_CAMERA_GROUND_CLEARANCE
+
+  if (camera.position.y < minimumY) {
+    camera.position.y = minimumY
+    camera.updateMatrixWorld()
   }
 }
 
@@ -1289,12 +1337,15 @@ export default {
 
         camera.position.set(-40, 5.1, -30)
         camera.lookAt(-4, 4.2, -78)
+        clampCameraToFarmhouseGround(camera)
       },
 
       update({ delta, elapsed, camera }) {
         if (!sceneGroup) {
           return
         }
+
+        clampCameraToFarmhouseGround(camera)
 
         if (cornfieldSystem) {
           cornfieldSystem.update(elapsed, camera)
