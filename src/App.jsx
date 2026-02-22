@@ -26,6 +26,8 @@ function App() {
   const viewportRef = useRef(null)
   const appRef = useRef(null)
   const transitionLockRef = useRef(false)
+  const bgMusicRef = useRef(null)
+  const bgMusicStartedRef = useRef(false)
 
   const [appState, setAppState] = useState('booting')
   const [fadeOpacity, setFadeOpacity] = useState(0)
@@ -75,6 +77,19 @@ function App() {
         appRef.current.dispose()
         appRef.current = null
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    const music = new Audio('/music.mp3')
+    music.loop = true
+    music.preload = 'auto'
+    bgMusicRef.current = music
+
+    return () => {
+      music.pause()
+      music.currentTime = 0
+      bgMusicRef.current = null
     }
   }, [])
 
@@ -140,6 +155,14 @@ function App() {
     }
 
     transitionLockRef.current = true
+
+    if (!bgMusicStartedRef.current && bgMusicRef.current) {
+      bgMusicStartedRef.current = true
+      bgMusicRef.current.play().catch(() => {
+        bgMusicStartedRef.current = false
+      })
+    }
+
     setFadeTransitionEnabled(false)
     setFadeOpacity(1)
     await wait(34)
