@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interstellar Tesseract</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #info {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      color: #444;
+      font-family: monospace;
+      font-size: 11px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="info">INTERSTELLAR — Tesseract &nbsp;|&nbsp; drag to orbit &nbsp;|&nbsp; scroll to zoom</div>
+
+  <script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.174.0/build/three.webgpu.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.174.0/build/three.webgpu.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/"
+  }
+}
+</script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ── WebGPU Renderer ──
+    const renderer = new THREE.WebGPURenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.55;
+    document.body.appendChild(renderer.domElement);
+    await renderer.init();
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.FogExp2(0x000000, 0.018);
+
+    const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.05, 300);
+    camera.position.set(-9, -2, 10);
+    camera.lookAt(0.5, 2.5, 0);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0.5, 2.5, 0);
+    controls.minDistance = 3;
+    controls.maxDistance = 50;
+
+    const clock = new THREE.Clock();
+
+    // ════════════════════════════════════════════════════
+    // PROCEDURAL TEXTURES — book-spine lines on surfaces
+    // ════════════════════════════════════════════════════
+
+    function createBookSpineTexture(seed) {
+      const canvas = document.createElement('canvas');
+      const W = 1024, H = 256;
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#050302';
+      ctx.fillRect(0, 0, W, H);
+
+      // Seeded pseudo-random
+      let s = seed || 1;
+      const rand = () => { s = (s * 16807 + 11) % 2147483647; return (s & 0x7fffffff) / 0x7fffffff; };
+
+      let x = 0;
+      while (x < W) {
+        const gap = 0.5 + rand() * 3;
+        const lineW = 0.5 + rand() * 2.5;
+        const r0 = rand();
+        let r, g, b;
+        if (r0 > 0.93) {
+          r = 55 + Math.floor(rand() * 55); g = 32 + Math.floor(rand() * 22); b = 12 + Math.floor(rand() * 12);
+        } else if (r0 > 0.6) {
+          r = 16 + Math.floor(rand() * 22); g = 10 + Math.floor(rand() * 14); b = 4 + Math.floor(rand() * 8);
+        } else {
+          r = 2 + Math.floor(rand() * 7); g = 1 + Math.floor(rand() * 5); b = Math.floor(rand() * 3);
+        }
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(Math.floor(x), 0, Math.ceil(lineW), H);
+        x += lineW + gap;
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(3, 1);
+      return tex;
+    }
+
+    function createShelfEdgeTexture(seed) {
+      const canvas = document.createElement('canvas');
+      const W = 256, H = 512;
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#040302';
+      ctx.fillRect(0, 0, W, H);
+
+      let s = seed || 77;
+      const rand = () => { s = (s * 16807 + 11) % 2147483647; return (s & 0x7fffffff) / 0x7fffffff; };
+
+      let y = 0;
+      while (y < H) {
+        const gap = 0.5 + rand() * 3;
+        const lineH = 0.5 + rand() * 2;
+        const r0 = rand();
+        let r, g, b;
+        if (r0 > 0.88) {
+          r = 40 + Math.floor(rand() * 35); g = 24 + Math.floor(rand() * 16); b = 8 + Math.floor(rand() * 10);
+        } else if (r0 > 0.5) {
+          r = 10 + Math.floor(rand() * 16); g = 7 + Math.floor(rand() * 10); b = 3 + Math.floor(rand() * 6);
+        } else {
+          r = 2 + Math.floor(rand() * 5); g = 1 + Math.floor(rand() * 3); b = Math.floor(rand() * 2);
+        }
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(0, Math.floor(y), W, Math.ceil(lineH));
+        y += lineH + gap;
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1, 2);
+      return tex;
+    }
+
+    // Create texture variants for visual variety
+    const bookTextures = [createBookSpineTexture(1), createBookSpineTexture(42), createBookSpineTexture(137), createBookSpineTexture(999)];
+    const edgeTextures = [createShelfEdgeTexture(7), createShelfEdgeTexture(53)];
+
+    // ════════════════════════════════════════════════════
+    // MATERIALS
+    // ════════════════════════════════════════════════════
+
+    function beamMat(hex) {
+      return new THREE.MeshStandardMaterial({ color: hex || 0x111111, metalness: 0.85, roughness: 0.4 });
+    }
+
+    const bookPanelMats = bookTextures.map(t => {
+      const mat = new THREE.MeshStandardMaterial({
+        map: t,
+        emissiveMap: t,
+        emissive: new THREE.Color(0.7, 0.4, 0.18),
+        roughness: 0.95,
+        metalness: 0.0
+      });
+      return mat;
+    });
+
+    // Rotated 90° variants for side walls (lines run vertically)
+    const bookPanelMatsRotated = bookTextures.map(t => {
+      const t2 = t.clone();
+      t2.rotation = Math.PI / 2;
+      t2.center.set(0.5, 0.5);
+      const mat = new THREE.MeshStandardMaterial({
+        map: t2,
+        emissiveMap: t2,
+        emissive: new THREE.Color(0.7, 0.4, 0.18),
+        roughness: 0.95,
+        metalness: 0.0
+      });
+      return mat;
+    });
+
+    const edgePanelMats = edgeTextures.map(t => {
+      const mat = new THREE.MeshStandardMaterial({
+        map: t,
+        emissiveMap: t,
+        emissive: new THREE.Color(0.55, 0.3, 0.12),
+        roughness: 0.9,
+        metalness: 0.05
+      });
+      return mat;
+    });
+
+    const warmGlowMat = new THREE.MeshStandardMaterial({
+      color: 0x331200, emissive: new THREE.Color(0.25, 0.09, 0.01), roughness: 0.9,
+    });
+
+    const cyanGlowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.85, 1.2) });
+    const orangeGlowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.45, 0.05) });
+    const dimWarmMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 0.25, 0.02) });
+
+    // ════════════════════════════════════════════════════
+    // BOOKSHELF UNIT — textured surfaces, no loose lines
+    // ════════════════════════════════════════════════════
+
+    let shelfIdx = 0;
+    function buildBookshelfUnit(w, h, rotated) {
+      const g = new THREE.Group();
+      const depth = 0.35;
+      const mats = rotated ? bookPanelMatsRotated : bookPanelMats;
+      const panelMat = mats[shelfIdx % mats.length];
+      const eMat = edgePanelMats[shelfIdx % edgePanelMats.length];
+      shelfIdx++;
+
+      // Front panel with book-spine texture (faces inward toward Cooper)
+      const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.04), panelMat);
+      back.position.z = depth * 0.5;
+      g.add(back);
+
+      // Subtle emissive glow layer
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, h * 0.96, 0.005), warmGlowMat);
+      glow.position.z = depth * 0.5 - 0.025;
+      g.add(glow);
+
+      // Horizontal shelves
+      const shelfCount = Math.round(h / 0.45);
+      for (let i = 0; i <= shelfCount; i++) {
+        const sy = -h / 2 + (h / shelfCount) * i;
+        // Shelf board — front edge visible with edge texture
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(w, 0.028, depth), eMat);
+        shelf.position.set(0, sy, 0);
+        g.add(shelf);
+      }
+
+      // Vertical dividers (structural, fewer)
+      const divCount = Math.round(w / 0.75);
+      for (let i = 0; i <= divCount; i++) {
+        const dx = -w / 2 + (w / divCount) * i;
+        const div = new THREE.Mesh(new THREE.BoxGeometry(0.02, h, depth), beamMat(0x090909));
+        div.position.set(dx, 0, 0);
+        g.add(div);
+      }
+
+      // Depth side panels (with edge texture — visible at angle)
+      const lSide = new THREE.Mesh(new THREE.BoxGeometry(depth, h, 0.025), eMat);
+      lSide.position.set(-w / 2, 0, 0);
+      g.add(lSide);
+      const rSide = new THREE.Mesh(new THREE.BoxGeometry(depth, h, 0.025), eMat);
+      rSide.position.set(w / 2, 0, 0);
+      g.add(rSide);
+
+      // Frame
+      const ft = 0.055;
+      const fm = beamMat(0x070707);
+      [[0, h / 2 + ft / 2, 0, w + ft * 2, ft, depth + 0.04],
+      [0, -h / 2 - ft / 2, 0, w + ft * 2, ft, depth + 0.04],
+      [-w / 2 - ft / 2, 0, 0, ft, h, depth + 0.04],
+      [w / 2 + ft / 2, 0, 0, ft, h, depth + 0.04]
+      ].forEach(([x, y, z, sw, sh, sd]) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(sw, sh, sd), fm);
+        m.position.set(x, y, z);
+        g.add(m);
+      });
+
+      return g;
+    }
+
+    // ════════════════════════════════════════════════════
+    // BUILD TESSERACT CORRIDOR
+    // ════════════════════════════════════════════════════
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    const CW = 5.5, CH = 7.0, LEN = 60;
+    const PITCH = 2.1;
+
+    // Inner corridor walls
+    for (let z = -LEN; z <= LEN; z += PITCH) {
+      const h = 3.4, w = PITCH * 0.95;
+      [[-CW, 1.5, Math.PI / 2], [CW, 1.5, -Math.PI / 2]].forEach(([x, y, ry]) => {
+        const s = buildBookshelfUnit(w, h, true);  // rotated for side walls
+        s.position.set(x, y, z);
+        s.rotation.y = ry;
+        root.add(s);
+      });
+      [[0, CH, Math.PI / 2], [0, -CH + 2, -Math.PI / 2]].forEach(([x, y, rx]) => {
+        const s = buildBookshelfUnit(w, h * 0.85);  // default for top/bottom
+        s.position.set(x, y, z);
+        s.rotation.x = rx;
+        root.add(s);
+      });
+    }
+
+    // Outer concentric layers
+    for (let layer = 1; layer <= 4; layer++) {
+      const off = layer * 2.8;
+      const pitch = PITCH * (1 + layer * 0.08);
+      for (let z = -LEN; z <= LEN; z += pitch) {
+        const h = 3.8 + layer * 0.3, w = pitch * 0.93;
+        [[-CW - off, 1.5, Math.PI / 2], [CW + off, 1.5, -Math.PI / 2]].forEach(([x, y, ry]) => {
+          const s = buildBookshelfUnit(w, h, true);  // rotated for side walls
+          s.position.set(x, y, z);
+          s.rotation.y = ry;
+          root.add(s);
+        });
+        [[0, CH + off, Math.PI / 2], [0, -CH + 2 - off, -Math.PI / 2]].forEach(([x, y, rx]) => {
+          const s = buildBookshelfUnit(w, h * 0.8);  // default for top/bottom
+          s.position.set(x, y, z);
+          s.rotation.x = rx;
+          root.add(s);
+        });
+      }
+    }
+
+    // ════════════════════════════════════════════════════
+    // INTER-LAYER CONNECTING FINS
+    // Creates cross-section line patterns between nested layers
+    // ════════════════════════════════════════════════════
+
+    function addInterLayerConnectors() {
+      const g = new THREE.Group();
+      const finMat = beamMat(0x060604);
+
+      for (let layer = 0; layer < 4; layer++) {
+        const iOff = layer * 2.8;
+        const oOff = (layer + 1) * 2.8;
+        const span = oOff - iOff;
+
+        // Horizontal fins between side walls (create horizontal lines when viewed from inside)
+        for (let z = -LEN; z <= LEN; z += 1.6) {
+          for (let yOff = -1.5; yOff <= 1.8; yOff += 0.7) {
+            // Left
+            const fL = new THREE.Mesh(new THREE.BoxGeometry(span, 0.025, 0.025), finMat);
+            fL.position.set(-CW - iOff - span / 2, 1.5 + yOff, z);
+            g.add(fL);
+            // Right
+            const fR = new THREE.Mesh(new THREE.BoxGeometry(span, 0.025, 0.025), finMat);
+            fR.position.set(CW + iOff + span / 2, 1.5 + yOff, z);
+            g.add(fR);
+          }
+        }
+
+        // Vertical fins between top/bottom walls
+        for (let z = -LEN; z <= LEN; z += 2.0) {
+          for (let xOff = -2; xOff <= 2; xOff += 0.8) {
+            const fT = new THREE.Mesh(new THREE.BoxGeometry(0.025, span, 0.025), finMat);
+            fT.position.set(xOff, CH + iOff + span / 2, z);
+            g.add(fT);
+            const fB = new THREE.Mesh(new THREE.BoxGeometry(0.025, span, 0.025), finMat);
+            fB.position.set(xOff, -CH + 2 - iOff - span / 2, z);
+            g.add(fB);
+          }
+        }
+      }
+      return g;
+    }
+    root.add(addInterLayerConnectors());
+
+    // ════════════════════════════════════════════════════
+    // STRUCTURAL BEAMS — regular grid
+    // ════════════════════════════════════════════════════
+
+    function addBeams() {
+      const g = new THREE.Group();
+
+      // I-beam pillars along corridor edges
+      for (let z = -LEN; z <= LEN; z += 4.5) {
+        [-CW - 0.2, CW + 0.2].forEach(x => {
+          const p = new THREE.Group();
+          const mat = beamMat(0x060606);
+          p.add(new THREE.Mesh(new THREE.BoxGeometry(0.05, CH * 2 + 4, 0.15), mat));
+          [-CH - 1.5, CH + 1.5].forEach(fy => {
+            const fl = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.22), mat);
+            fl.position.y = fy;
+            p.add(fl);
+          });
+          p.position.set(x, 1.5, z);
+          g.add(p);
+        });
+      }
+
+      // Horizontal cross beams
+      for (let z = -LEN; z <= LEN; z += 5.5) {
+        for (let y = -CH + 2; y <= CH; y += 3.2) {
+          const beam = new THREE.Mesh(new THREE.BoxGeometry(CW * 2 + 1, 0.045, 0.045), beamMat(0x080808));
+          beam.position.set(0, y, z);
+          g.add(beam);
+        }
+      }
+
+      // Depth-running beams at corners
+      [[-CW, CH], [CW, CH], [-CW, -CH + 2], [CW, -CH + 2]].forEach(([x, y]) => {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, LEN * 2), beamMat(0x070707));
+        beam.position.set(x, y, 0);
+        g.add(beam);
+      });
+
+      // Right-side structural frames
+      for (let z = -LEN; z <= LEN; z += 4.0) {
+        const frame = new THREE.Group();
+        const mat = beamMat(0x0a0a0a);
+        const fw = 3.5, fh = 5;
+        [[0, fh / 2, fw, 0.06], [0, -fh / 2, fw, 0.06],
+        [-fw / 2, 0, 0.06, fh], [fw / 2, 0, 0.06, fh]].forEach(([x, y, sw, sh]) => {
+          frame.add(new THREE.Mesh(new THREE.BoxGeometry(sw, sh, 0.06), mat)).position.set(x, y, 0);
+        });
+        const diag = new THREE.Mesh(new THREE.BoxGeometry(0.04, Math.sqrt(fw * fw + fh * fh), 0.04), mat);
+        diag.rotation.z = Math.atan2(fh, fw);
+        frame.add(diag);
+        frame.position.set(CW + 4.5, 2, z);
+        frame.rotation.y = -Math.PI / 2;
+        g.add(frame);
+      }
+
+      return g;
+    }
+    root.add(addBeams());
+
+    // ════════════════════════════════════════════════════
+    // ACCENT LIGHT STRIPS — on surfaces only
+    // ════════════════════════════════════════════════════
+
+    function addLightStrips() {
+      const g = new THREE.Group();
+
+      // Cyan strips along top ceiling edge
+      for (let z = -LEN; z <= LEN; z += 0.9) {
+        const len = 0.8 + Math.random() * 0.15;
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(len, 0.025, 0.02), cyanGlowMat);
+        seg.position.set(-CW * 0.2, CH + 0.3, z);
+        g.add(seg);
+        const seg2 = seg.clone();
+        seg2.position.set(CW * 0.15, CH + 0.28, z);
+        g.add(seg2);
+      }
+
+      // Warm orange strips along floor edges
+      for (let z = -LEN; z <= LEN; z += 1.4) {
+        const s1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1.3), orangeGlowMat);
+        s1.position.set(-CW + 0.2, -CH + 2.4, z);
+        g.add(s1);
+        const s2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1.3), dimWarmMat);
+        s2.position.set(CW - 0.2, -CH + 2.4, z);
+        g.add(s2);
+      }
+
+      // Surface-aligned warm accents on wall edges
+      for (let i = 0; i < 80; i++) {
+        const isWarm = Math.random() > 0.3;
+        const mat = new THREE.MeshBasicMaterial({
+          color: isWarm
+            ? new THREE.Color(0.6 + Math.random() * 0.4, 0.15 + Math.random() * 0.15, 0.01)
+            : new THREE.Color(0.08, 0.25 + Math.random() * 0.2, 0.5 + Math.random() * 0.3)
+        });
+        const wall = Math.floor(Math.random() * 4);
+        const zPos = (Math.random() - 0.5) * LEN * 1.5;
+        const len = 0.5 + Math.random() * 2;
+        let mesh;
+        if (wall < 2) {
+          mesh = new THREE.Mesh(new THREE.BoxGeometry(0.01, len, 0.01), mat);
+          mesh.position.set(wall === 0 ? -CW - Math.random() * 10 : CW + Math.random() * 10,
+            Math.random() * (CH * 2) - CH + 2, zPos);
+        } else {
+          mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.01, 0.01), mat);
+          mesh.position.set((Math.random() - 0.5) * CW * 2,
+            wall === 2 ? CH + Math.random() * 10 : -CH + 2 - Math.random() * 10, zPos);
+        }
+        g.add(mesh);
+      }
+
+      return g;
+    }
+    root.add(addLightStrips());
+
+    // ════════════════════════════════════════════════════
+    // MINECRAFT COOPER — fixed limb alignment
+    // ════════════════════════════════════════════════════
+
+    function buildCooper() {
+      const cooper = new THREE.Group();
+
+      const suitLight = new THREE.MeshStandardMaterial({ color: 0xbcbcbc, roughness: 0.5, metalness: 0.15 });
+      const suitMid = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.2 });
+      const suitDark = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.6, metalness: 0.3 });
+      const visorMat = new THREE.MeshStandardMaterial({ color: 0x1a3d5c, roughness: 0.05, metalness: 0.9 });
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xcc8855, roughness: 0.9 });
+      const bootMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7, metalness: 0.3 });
+      const backMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.6, metalness: 0.4 });
+      const orangeMat = new THREE.MeshStandardMaterial({
+        color: 0xff5500, emissive: new THREE.Color(0.25, 0.06, 0), roughness: 0.5
+      });
+
+      function box(w, h, d, mat, px, py, pz, rx, ry, rz) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        m.position.set(px || 0, py || 0, pz || 0);
+        if (rx) m.rotation.x = rx;
+        if (ry) m.rotation.y = ry;
+        if (rz) m.rotation.z = rz;
+        return m;
+      }
+
+      // ── Helmet ──
+      const head = new THREE.Group();
+      head.add(box(0.52, 0.52, 0.52, suitLight));
+      head.add(box(0.42, 0.32, 0.06, visorMat, 0, 0.02, 0.28));
+      head.add(box(0.38, 0.28, 0.04, skinMat, 0, 0.02, 0.24));
+      head.add(box(0.54, 0.06, 0.06, suitMid, 0, 0.22, 0));
+      head.add(box(0.54, 0.06, 0.06, suitMid, 0, -0.1, 0));
+      head.position.set(0, 1.82, 0);
+      cooper.add(head);
+
+      // ── Neck ──
+      cooper.add(box(0.28, 0.1, 0.28, suitDark, 0, 1.48, 0));
+
+      // ── Torso ──
+      cooper.add(box(0.52, 0.8, 0.32, suitLight, 0, 1.1, 0));
+      cooper.add(box(0.28, 0.22, 0.03, suitDark, 0, 1.22, 0.18));
+      for (let i = 0; i < 3; i++) {
+        cooper.add(box(0.04, 0.04, 0.025, suitMid, -0.08 + i * 0.08, 1.28, 0.195));
+      }
+      cooper.add(box(0.54, 0.05, 0.34, suitDark, 0, 1.4, 0));
+      cooper.add(box(0.54, 0.06, 0.34, suitDark, 0, 0.72, 0));
+
+      // ── Backpack ──
+      cooper.add(box(0.44, 0.65, 0.22, backMat, 0, 1.1, -0.27));
+      cooper.add(box(0.18, 0.45, 0.05, suitDark, 0.06, 1.15, -0.4));
+      cooper.add(box(0.06, 0.06, 0.06, suitDark, 0.06, 1.35, -0.42));
+
+      // ── Left arm (reaching out) — GLOVE ATTACHED TO ARM GROUP ──
+      const leftArm = new THREE.Group();
+      leftArm.add(box(0.22, 0.68, 0.22, suitLight));               // arm
+      leftArm.add(box(0.20, 0.18, 0.22, bootMat, 0, -0.43, 0));    // glove ← child of arm
+      leftArm.position.set(-0.42, 1.18, 0.0);
+      leftArm.rotation.z = 0.55;
+      leftArm.rotation.x = -0.9;
+      cooper.add(leftArm);
+
+      // ── Right arm (bent forward) — GLOVE ATTACHED ──
+      const rightArm = new THREE.Group();
+      rightArm.add(box(0.22, 0.68, 0.22, suitLight));
+      rightArm.add(box(0.20, 0.18, 0.22, bootMat, 0, -0.43, 0));   // glove ← child of arm
+      rightArm.position.set(0.42, 1.22, 0.0);
+      rightArm.rotation.z = -0.3;
+      rightArm.rotation.x = -0.7;
+      cooper.add(rightArm);
+
+      // ── Left leg — BOOT ATTACHED TO LEG GROUP ──
+      const leftLeg = new THREE.Group();
+      leftLeg.add(box(0.22, 0.72, 0.22, suitLight));
+      leftLeg.add(box(0.24, 0.18, 0.30, bootMat, 0, -0.45, 0.03)); // boot ← child of leg
+      leftLeg.position.set(-0.14, 0.34, 0.0);
+      leftLeg.rotation.x = 0.18;
+      cooper.add(leftLeg);
+
+      // ── Right leg — BOOT ATTACHED ──
+      const rightLeg = new THREE.Group();
+      rightLeg.add(box(0.22, 0.72, 0.22, suitLight));
+      rightLeg.add(box(0.24, 0.18, 0.30, bootMat, 0, -0.45, 0.03)); // boot ← child of leg
+      rightLeg.position.set(0.14, 0.34, 0.0);
+      rightLeg.rotation.x = -0.12;
+      cooper.add(rightLeg);
+
+      cooper.scale.setScalar(1.3);
+      return cooper;
+    }
+
+    const cooper = buildCooper();
+    cooper.position.set(0.4, 2.5, 0.5);
+    cooper.rotation.y = -0.35;
+    cooper.rotation.z = 0.12;
+    cooper.rotation.x = -0.08;
+    scene.add(cooper);
+
+    // ════════════════════════════════════════════════════
+    // LIGHTING
+    // ════════════════════════════════════════════════════
+
+    scene.add(new THREE.AmbientLight(0x080818, 0.4));
+
+    const keyLight = new THREE.PointLight(0xffeedd, 12, 22);
+    keyLight.position.set(0.5, 7, 3);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.PointLight(0x3355aa, 5, 18);
+    fillLight.position.set(-5, -1, 2);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0xffeebb, 8, 15);
+    rimLight.position.set(-1.5, 4, -5);
+    scene.add(rimLight);
+
+    const cyanLight = new THREE.PointLight(0x44aaff, 6, 30);
+    cyanLight.position.set(-1, CH + 2, -3);
+    scene.add(cyanLight);
+
+    const warmLight1 = new THREE.PointLight(0xff7733, 4, 20);
+    warmLight1.position.set(-CW + 1, 2, 3);
+    scene.add(warmLight1);
+
+    const warmLight2 = new THREE.PointLight(0xff6611, 3, 18);
+    warmLight2.position.set(CW - 1, 1, -2);
+    scene.add(warmLight2);
+
+    const spot = new THREE.SpotLight(0xffffff, 15, 25, Math.PI / 7, 0.6, 1.5);
+    spot.position.set(0.5, 9, 3);
+    spot.target = cooper;
+    scene.add(spot);
+
+    for (let i = 0; i < 30; i++) {
+      const warm = Math.random() > 0.4;
+      const pl = new THREE.PointLight(
+        warm ? new THREE.Color(0.9, 0.4 + Math.random() * 0.3, 0.05)
+          : new THREE.Color(0.1, 0.3 + Math.random() * 0.3, 0.8),
+        0.8 + Math.random() * 2.5,
+        10 + Math.random() * 12
+      );
+      pl.position.set(
+        (Math.random() - 0.5) * 22,
+        Math.random() * 14 - 3,
+        (Math.random() - 0.5) * 40
+      );
+      scene.add(pl);
+    }
+
+    // ════════════════════════════════════════════════════
+    // ANIMATION
+    // ════════════════════════════════════════════════════
+
+    function animate() {
+      const t = clock.getElapsedTime();
+
+      cooper.position.y = 2.5 + Math.sin(t * 0.38) * 0.28;
+      cooper.rotation.z = 0.12 + Math.sin(t * 0.27) * 0.04;
+      cooper.rotation.x = -0.08 + Math.cos(t * 0.22) * 0.025;
+
+      keyLight.position.x = 0.5 + Math.sin(t * 0.17) * 0.6;
+
+      controls.update();
+      renderer.renderAsync(scene, camera);
+    }
+    renderer.setAnimationLoop(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+
+</html>
