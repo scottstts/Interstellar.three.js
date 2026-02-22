@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interstellar Endurance - Post Docking Explosion</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #a59ba8; }
+        canvas { display: block; }
+        #info {
+            position: absolute; top: 15px; width: 100%; text-align: center;
+            color: #ffffff; font-family: monospace; font-size: 14px;
+            pointer-events: none; text-shadow: 0px 1px 4px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/",
+                "three/nodes": "https://unpkg.com/three@0.164.0/examples/jsm/nodes/Nodes.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">ENDURANCE — POST FORCED-DOCKING INCIDENT<br>Left Click: Rotate | Scroll: Zoom</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import WebGPURenderer from 'three/addons/renderers/webgpu/WebGPURenderer.js';
+        import { MeshStandardNodeMaterial, color, float } from 'three/nodes';
+
+        // ==========================================
+        // 1. SCENE, CAMERA & WEBGPU RENDERER
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xa59ba8);
+
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
+        camera.position.set(0, 0, 120);
+
+        const renderer = new WebGPURenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // ==========================================
+        // 2. LIGHTING
+        // ==========================================
+        scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
+        sunLight.position.set(50, 80, 100);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 10;
+        sunLight.shadow.camera.far = 250;
+        const d = 50;
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.bias = -0.001;
+        scene.add(sunLight);
+
+        const fillLight = new THREE.DirectionalLight(0xddeeff, 1.2);
+        fillLight.position.set(-50, -50, -50);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        rimLight.position.set(0, 50, -100);
+        scene.add(rimLight);
+
+        // ==========================================
+        // 3. TSL METALLIC MATERIALS
+        // ==========================================
+        function createMetalMat(hexColor, roughness, metalness) {
+            const mat = new MeshStandardNodeMaterial();
+            mat.colorNode = color(hexColor);
+            mat.roughnessNode = float(roughness);
+            mat.metalnessNode = float(metalness);
+            return mat;
+        }
+
+        const matWhiteHull  = createMetalMat(0xdddddd, 0.4,  0.6);
+        const matDarkHull   = createMetalMat(0x333333, 0.5,  0.7);
+        const matSolarPanel = createMetalMat(0x111111, 0.15, 0.9);
+        const matGlossBlack = createMetalMat(0x050505, 0.05, 0.8);
+        const matStump      = createMetalMat(0x222222, 0.9,  0.3);
+        const matTornFace   = createMetalMat(0x1a1a1a, 0.85, 0.45);
+
+        // ==========================================
+        // 4. TORN HALF-POD GEOMETRY BUILDER (Z-AXIS)
+        // ==========================================
+        function seededRand(seed) {
+            const x = Math.sin(seed + 1) * 43758.5453;
+            return x - Math.floor(x);
+        }
+
+        function buildTornHalfPod() {
+            const group = new THREE.Group();
+
+            // --- A) HALF HULL (Surviving back half, Z < 0) ---
+            // Full width (X=8), Full height (Y=7), Half depth (Z=5)
+            // Centered at z = -2.5, meaning it spans from z = -5 to z = 0.
+            const hull = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 5), matWhiteHull);
+            hull.position.set(0, 0, -2.5);
+            hull.castShadow = true;
+            hull.receiveShadow = true;
+            group.add(hull);
+
+            // Solar panel on the rear face of the surviving half
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel);
+            panel.position.set(0, 0, -4.6);
+            panel.castShadow = true;
+            group.add(panel);
+
+            // Dark detail band mapped onto the surviving half depth
+            const detail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 2.5), matDarkHull);
+            detail.position.set(0, 0, -1.25);
+            group.add(detail);
+
+            // --- B) CUSTOM JAGGED TORN FACE (No Z-Fighting) ---
+            // Grid spanning full X and Y.
+            // Pushed to Z > 0.05 so it clears the flat face of the half-hull at Z=0.
+            {
+                const NX = 16, NY = 14;
+                const xMin = -4.0, xMax = 4.0;
+                const yMin = -3.5, yMax = 3.5;
+
+                const verts = [];
+                const idxArr = [];
+                const vi = (ix, iy) => ix * (NY + 1) + iy;
+
+                for (let ix = 0; ix <= NX; ix++) {
+                    for (let iy = 0; iy <= NY; iy++) {
+                        const x = xMin + (ix / NX) * (xMax - xMin);
+                        const y = yMin + (iy / NY) * (yMax - yMin);
+
+                        // Base offset slightly forward to completely avoid Z-fighting with the cut
+                        let zOff = 0.05; 
+                        
+                        if (ix > 0 && ix < NX && iy > 0 && iy < NY) {
+                            const seed = ix * 31 + iy * 17;
+                            let noise = Math.sin(ix * 2.1 + iy * 1.3) * 1.1
+                                      + Math.cos(ix * 4.7 - iy * 2.9) * 0.7
+                                      + (seededRand(seed) - 0.5) * 1.2;
+                            // Bulge outward into the missing half (+Z) 
+                            zOff = 0.05 + Math.abs(noise); 
+                        }
+                        verts.push(x, y, zOff);
+                    }
+                }
+
+                for (let ix = 0; ix < NX; ix++) {
+                    for (let iy = 0; iy < NY; iy++) {
+                        const a = vi(ix,   iy);
+                        const b = vi(ix+1, iy);
+                        const c = vi(ix+1, iy+1);
+                        const d = vi(ix,   iy+1);
+                        // Wind facing +Z
+                        idxArr.push(a, b, c,  a, c, d);
+                    }
+                }
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                geo.setIndex(idxArr);
+                geo.computeVertexNormals(); 
+                const mesh = new THREE.Mesh(geo, matTornFace);
+                mesh.castShadow = true;
+                group.add(mesh);
+            }
+
+            // --- C) JAGGED RIDGE SHARDS ---
+            // Form a messy rim of metal tearing outward into the +Z space
+            const numShards = 20;
+            for (let s = 0; s < numShards; s++) {
+                const t = s / (numShards - 1);
+                const angle = t * Math.PI * 2;
+                const x = Math.cos(angle) * 3.8;
+                const y = Math.sin(angle) * 3.3;
+
+                const r1 = seededRand(s * 7);
+                const r2 = seededRand(s * 7 + 1);
+                const r3 = seededRand(s * 7 + 2);
+                const r4 = seededRand(s * 7 + 3);
+
+                const shardW = 0.4 + r1 * 1.5; 
+                const shardH = 0.3 + r2 * 1.2; 
+                const shardD = 0.3 + r3 * 1.0; 
+                const zOff   = 0.1 + r4 * 1.5;    
+
+                const shardGeo = new THREE.BoxGeometry(shardW, shardH, shardD);
+                const shard = new THREE.Mesh(shardGeo, matWhiteHull);
+                
+                shard.position.set(x, y, zOff);
+                shard.rotation.x = (r1 - 0.5) * 1.5;
+                shard.rotation.y = (r2 - 0.5) * 1.5;
+                shard.rotation.z = angle + (r3 - 0.5) * 0.5;
+                shard.castShadow = true;
+                group.add(shard);
+            }
+
+            return group;
+        }
+
+        // ==========================================
+        // 5. OUTER RING (12 Modules)
+        // ==========================================
+        const endurance = new THREE.Group();
+        const RING_RADIUS = 32;
+        const NUM_MODULES = 12;
+
+        const IDX_BLOWN   = 4;
+        const IDX_PARTIAL = 5;
+
+        for (let i = 0; i < NUM_MODULES; i++) {
+            const angle = (i / NUM_MODULES) * Math.PI * 2;
+            const mx = Math.cos(angle) * RING_RADIUS;
+            const my = Math.sin(angle) * RING_RADIUS;
+
+            if (i === IDX_BLOWN) {
+                const stumpGroup = new THREE.Group();
+                const stump = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 1.2), matStump);
+                stump.castShadow = true;
+                stumpGroup.add(stump);
+
+                [
+                    { w:0.8, h:3.0, d:0.35, x: 2.4, y: 1.8, z:0.55, rx:0.2,  rz: 0.3  },
+                    { w:0.5, h:1.8, d:0.3,  x:-2.1, y:-2.2, z:0.55, rx:-0.1, rz:-0.2  },
+                    { w:0.9, h:1.4, d:0.35, x: 2.7, y:-1.3, z:0.5,  rx:0.25, rz: 0.35 },
+                    { w:0.4, h:2.3, d:0.28, x:-2.9, y: 1.0, z:0.5,  rx:-0.15,rz:-0.28 },
+                    { w:0.7, h:0.9, d:0.4,  x: 0.3, y: 2.7, z:0.45, rx:0.1,  rz: 0.18 },
+                ].forEach(s => {
+                    const shard = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, s.d), matStump);
+                    shard.position.set(s.x, s.y, s.z);
+                    shard.rotation.set(s.rx, 0, s.rz);
+                    shard.castShadow = true;
+                    stumpGroup.add(shard);
+                });
+
+                stumpGroup.position.set(mx, my, 0);
+                stumpGroup.rotation.z = angle + Math.PI / 2;
+                stumpGroup.lookAt(0, 0, 0);
+                endurance.add(stumpGroup);
+
+            } else if (i === IDX_PARTIAL) {
+                const modGroup = buildTornHalfPod();
+                modGroup.position.set(mx, my, 0);
+                modGroup.rotation.z = angle + Math.PI / 2;
+                modGroup.lookAt(0, 0, 0);
+                modGroup.rotateY(Math.PI);
+                endurance.add(modGroup);
+
+            } else {
+                const modGroup = new THREE.Group();
+
+                const base = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 10), matWhiteHull);
+                base.castShadow = true; base.receiveShadow = true;
+                modGroup.add(base);
+
+                const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 1), matSolarPanel);
+                innerPanel.position.set(0, 0, -4.6);
+                innerPanel.castShadow = true; innerPanel.receiveShadow = true;
+                modGroup.add(innerPanel);
+
+                const sideDetail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2, 4), matDarkHull);
+                sideDetail.position.set(0, 0, 1);
+                modGroup.add(sideDetail);
+
+                modGroup.position.set(mx, my, 0);
+                modGroup.rotation.z = angle + Math.PI / 2;
+                modGroup.lookAt(0, 0, 0);
+                endurance.add(modGroup);
+            }
+
+            // JOINT
+            const jointAngle = angle + (Math.PI / NUM_MODULES);
+            const jx = Math.cos(jointAngle) * RING_RADIUS;
+            const jy = Math.sin(jointAngle) * RING_RADIUS;
+
+            const jointGroup = new THREE.Group();
+            jointGroup.position.set(jx, jy, 0);
+            jointGroup.rotation.z = jointAngle;
+
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 9, 32), matWhiteHull);
+            tube.castShadow = true; tube.receiveShadow = true;
+            jointGroup.add(tube);
+
+            const jointCenter = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 2.5, 32), matWhiteHull);
+            jointGroup.add(jointCenter);
+
+            const port = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.5, 32), matGlossBlack);
+            port.rotation.z = Math.PI / 2;
+            jointGroup.add(port);
+
+            const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 32), matDarkHull);
+            rim.rotation.z = Math.PI / 2;
+            jointGroup.add(rim);
+
+            endurance.add(jointGroup);
+        }
+
+        // ==========================================
+        // 6. CENTRAL POLE & HUB
+        // ==========================================
+        const poleLength = RING_RADIUS - 5;
+        const poleGroup = new THREE.Group();
+        poleGroup.position.set(0, poleLength / 2 + 2, 0);
+
+        const poleCore = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, poleLength, 32), matWhiteHull);
+        poleCore.castShadow = true; poleCore.receiveShadow = true;
+        poleGroup.add(poleCore);
+
+        for (let i = -1; i <= 1; i++) {
+            const ring = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 2, 32), matDarkHull);
+            ring.position.y = i * (poleLength / 3);
+            poleGroup.add(ring);
+        }
+        endurance.add(poleGroup);
+
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3, 32), matWhiteHull);
+        hub.rotation.x = Math.PI / 2;
+        hub.castShadow = true; hub.receiveShadow = true;
+        endurance.add(hub);
+
+        const dockRing = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 16, 64), matDarkHull);
+        dockRing.position.z = 1.5;
+        endurance.add(dockRing);
+
+
+        // ==========================================
+        // 7. SCENE ASSEMBLY & ANIMATION
+        // ==========================================
+        scene.add(endurance);
+        endurance.rotation.x = -0.5;
+        endurance.rotation.y = -0.3;
+
+        const clock = new THREE.Clock();
+
+        renderer.setAnimationLoop(() => {
+            controls.update();
+            const delta = clock.getDelta();
+            endurance.rotation.z -= 0.1 * delta;
+            renderer.render(scene, camera);
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
