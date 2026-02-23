@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>three.js WebGPU SkyMesh + Sun (single file)</title>
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; background: #000; }
+    #msg { position: fixed; left: 12px; bottom: 12px; font: 12px/1.3 system-ui, sans-serif; color: #fff; opacity: 0.75; }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.183.1/build/three.webgpu.js",
+      "three/webgpu": "https://unpkg.com/three@0.183.1/build/three.webgpu.js",
+      "three/tsl": "https://unpkg.com/three@0.183.1/build/three.tsl.js",
+      "three/addons/": "https://unpkg.com/three@0.183.1/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.20.0/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div id="msg">Drag to orbit • WebGPU required</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import WebGPU from 'three/addons/capabilities/WebGPU.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
+    import GUI from 'lil-gui';
+
+    if ( WebGPU.isAvailable() === false ) {
+      document.body.appendChild( WebGPU.getErrorMessage() );
+      throw new Error('WebGPU not supported in this browser.');
+    }
+
+    // --- Scene / Camera ---
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera( 55, window.innerWidth / window.innerHeight, 0.1, 200000 );
+    camera.position.set( 0, 8, 20 );
+
+    // --- Renderer (WebGPU) ---
+    const renderer = new THREE.WebGPURenderer({ antialias: true });
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.9;
+    renderer.physicallyCorrectLights = true;
+    document.body.appendChild( renderer.domElement );
+
+    // Recent three versions use async init for WebGPU
+    await renderer.init();
+
+    // --- Controls ---
+    const controls = new OrbitControls( camera, renderer.domElement );
+    controls.target.set( 0, 3, 0 );
+    controls.enableDamping = true;
+
+    // --- Ground (just to have something to light) ---
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry( 2000, 2000 ),
+      new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    scene.add( ground );
+
+    // A small object for highlights/shadows
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry( 2, 64, 32 ),
+      new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 0.0 })
+    );
+    sphere.position.set( 0, 2, 0 );
+    scene.add( sphere );
+
+    // --- Sky (WebGPU-native SkyMesh) ---
+    const sky = new SkyMesh();
+    sky.scale.setScalar( 100000 );
+    scene.add( sky );
+
+    // --- Sun light + visible sun disk ---
+    const sunLight = new THREE.DirectionalLight( 0xffffff, 6.0 );
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set( 2048, 2048 );
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 2000;
+    sunLight.shadow.camera.left = -100;
+    sunLight.shadow.camera.right = 100;
+    sunLight.shadow.camera.top = 100;
+    sunLight.shadow.camera.bottom = -100;
+    scene.add( sunLight );
+
+    const ambient = new THREE.AmbientLight( 0xffffff, 0.03 );
+    scene.add( ambient );
+
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sphere.castShadow = true;
+    ground.receiveShadow = true;
+
+    // A tiny emissive sun disk you can actually see
+    const sunDisk = new THREE.Mesh(
+      new THREE.SphereGeometry( 120, 32, 16 ),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    scene.add( sunDisk );
+
+    // --- Parameters / GUI ---
+    const params = {
+      timeOfDay: 15.0,      // 0..24
+      turbidity: 10.0,
+      rayleigh: 2.0,
+      mieCoefficient: 0.005,
+      mieDirectionalG: 0.8,
+      exposure: 0.9
+    };
+
+    const gui = new GUI();
+    gui.add( params, 'timeOfDay', 0, 24, 0.01 ).name('Time of day');
+    gui.add( params, 'turbidity', 1, 20, 0.1 );
+    gui.add( params, 'rayleigh', 0, 4, 0.01 );
+    gui.add( params, 'mieCoefficient', 0, 0.02, 0.0001 );
+    gui.add( params, 'mieDirectionalG', 0, 0.999, 0.001 );
+    gui.add( params, 'exposure', 0.1, 2.0, 0.01 );
+
+    function updateSunAndSky() {
+      // Map timeOfDay to sun elevation.
+      // Noon (~12) => high elevation; sunrise/sunset => near horizon.
+      // This is a simple approximation for a nice-looking cycle.
+      const t = (params.timeOfDay / 24) * Math.PI * 2;       // 0..2π
+      const elevation = Math.max( -0.05, Math.sin( t - Math.PI / 2 ) ); // -0.05..1
+      const phi = THREE.MathUtils.lerp( Math.PI * 0.51, Math.PI * 0.02, (elevation + 0.05) / 1.05 ); // near-horizon -> overhead
+      const theta = t + Math.PI * 0.35; // rotate around scene a bit
+
+      const sunDir = new THREE.Vector3().setFromSphericalCoords( 1, phi, theta ).normalize();
+
+      // SkyMesh uniforms are "value" nodes
+      sky.turbidity.value = params.turbidity;
+      sky.rayleigh.value = params.rayleigh;
+      sky.mieCoefficient.value = params.mieCoefficient;
+      sky.mieDirectionalG.value = params.mieDirectionalG;
+      sky.sunPosition.value.copy( sunDir );
+
+      // Lighting
+      sunLight.position.copy( sunDir ).multiplyScalar( 200 );
+      sunLight.target.position.set( 0, 0, 0 );
+      sunLight.target.updateMatrixWorld();
+
+      // Warmer sun near horizon (approx.)
+      const warm = new THREE.Color(0xffd1a3);
+      const white = new THREE.Color(0xffffff);
+      const mix = THREE.MathUtils.clamp( (elevation + 0.05) / 1.05, 0, 1 );
+      sunLight.color.copy( warm ).lerp( white, mix );
+
+      // Brighter at midday
+      sunLight.intensity = THREE.MathUtils.lerp( 0.5, 7.0, Math.pow(mix, 0.7) );
+
+      // Sun disk far away in the same direction
+      sunDisk.position.copy( sunDir ).multiplyScalar( 50000 );
+      const diskBrightness = THREE.MathUtils.lerp( 0.0, 1.0, mix );
+      sunDisk.visible = diskBrightness > 0.02;
+
+      renderer.toneMappingExposure = params.exposure;
+    }
+
+    updateSunAndSky();
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    });
+
+    // --- Render loop ---
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      updateSunAndSky();
+      renderer.render( scene, camera );
+    });
+  </script>
+</body>
+</html>

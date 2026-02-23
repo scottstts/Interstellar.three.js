@@ -322,10 +322,10 @@ function createStandingAstronaut({ name, accentColor }) {
     metalness: 0.3,
   })
 
-  addBlockPart(figure, {
+  addBlockPart(head, {
     name: `${name}-visor`,
-    size: [0.58, 0.22, 0.16],
-    position: [0, 3.32, 0.46],
+    size: [0.58, 0.6, 0.16],
+    position: [0, -0.02, 0.46],
     color: visorDark,
     roughness: 0.28,
     metalness: 0.08,

@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu'
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
 import { disposeObject3D } from '../utils/dispose'
 
 const CORNFIELD_CAMERA_GROUND_CLEARANCE = 0.75
@@ -44,9 +45,15 @@ export default {
     let drone = null
     let cornInstances = null
     let cornTasselInstances = null
-    let leafInstances = null
+    let leafUpperInstances = null
+    let leafLowerInstances = null
     let ambientDust = null
     let trailParticles = null
+
+    let skyMesh = null
+    let sunDisk = null
+    let sunDirection = null
+    let sunLight = null
 
     /* path data */
     const truckPath = []
@@ -59,7 +66,7 @@ export default {
     const FIELD_HALF_X = 220
     const FIELD_HALF_Z = 220
     const FIELD_CENTER_Z = -30
-    const CULL_RADIUS = 25       /* only update matrices within this of truck */
+    const CULL_RADIUS = 25 /* only update matrices within this of truck */
     const CULL_RADIUS_SQ = CULL_RADIUS * CULL_RADIUS
     const cornBasePositions = []
     const cornBendFactors = []
@@ -176,9 +183,14 @@ export default {
         drone = null
         cornInstances = null
         cornTasselInstances = null
-        leafInstances = null
+        leafUpperInstances = null
+        leafLowerInstances = null
         ambientDust = null
         trailParticles = null
+        skyMesh = null
+        sunDisk = null
+        sunDirection = null
+        sunLight = null
       },
     }
 
@@ -196,17 +208,20 @@ export default {
         dummy.scale.set(bp.sx, bp.sy, bp.sx)
         dummy.updateMatrix()
         cornInstances.setMatrixAt(i, dummy.matrix)
-
-        /* reset tassel */
         if (cornTasselInstances) {
-          dummy.position.set(bp.x, bp.sy * 2.8, bp.z)
-          dummy.scale.set(0.2, 0.35, 0.2)
-          dummy.updateMatrix()
           cornTasselInstances.setMatrixAt(i, dummy.matrix)
+        }
+        if (leafUpperInstances) {
+          leafUpperInstances.setMatrixAt(i, dummy.matrix)
+        }
+        if (leafLowerInstances) {
+          leafLowerInstances.setMatrixAt(i, dummy.matrix)
         }
       }
       if (cornInstances) cornInstances.instanceMatrix.needsUpdate = true
       if (cornTasselInstances) cornTasselInstances.instanceMatrix.needsUpdate = true
+      if (leafUpperInstances) leafUpperInstances.instanceMatrix.needsUpdate = true
+      if (leafLowerInstances) leafLowerInstances.instanceMatrix.needsUpdate = true
     }
 
     /* ============================================================== */
@@ -217,8 +232,7 @@ export default {
       const BEND_RADIUS = 3.2
       const BEND_RADIUS_SQ = BEND_RADIUS * BEND_RADIUS
       const BEND_SPEED = 5.0
-      let stalksUpdated = false
-      let tasselsUpdated = false
+      let updated = false
 
       for (let i = 0; i < CORN_COUNT; i++) {
         const bp = cornBasePositions[i]
@@ -255,24 +269,22 @@ export default {
 
         dummy.updateMatrix()
         cornInstances.setMatrixAt(i, dummy.matrix)
-        stalksUpdated = true
-
-        /* tassel follows this stalk */
-        if (cornTasselInstances && bend > 0.005) {
-          cornInstances.getMatrixAt(i, dummy.matrix)
-          dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale)
-          const stalkH = bp.sy * 2.8
-          const up = new THREE.Vector3(0, stalkH, 0).applyQuaternion(dummy.quaternion)
-          dummy.position.add(up)
-          dummy.scale.set(0.2, 0.35, 0.2)
-          dummy.updateMatrix()
+        if (cornTasselInstances) {
           cornTasselInstances.setMatrixAt(i, dummy.matrix)
-          tasselsUpdated = true
         }
+        if (leafUpperInstances) {
+          leafUpperInstances.setMatrixAt(i, dummy.matrix)
+        }
+        if (leafLowerInstances) {
+          leafLowerInstances.setMatrixAt(i, dummy.matrix)
+        }
+        updated = true
       }
 
-      if (stalksUpdated) cornInstances.instanceMatrix.needsUpdate = true
-      if (tasselsUpdated) cornTasselInstances.instanceMatrix.needsUpdate = true
+      if (updated) cornInstances.instanceMatrix.needsUpdate = true
+      if (updated && cornTasselInstances) cornTasselInstances.instanceMatrix.needsUpdate = true
+      if (updated && leafUpperInstances) leafUpperInstances.instanceMatrix.needsUpdate = true
+      if (updated && leafLowerInstances) leafLowerInstances.instanceMatrix.needsUpdate = true
     }
 
     /* ============================================================== */
@@ -329,66 +341,30 @@ export default {
     }
 
     function buildSkyDome() {
-      /* gradient sky via vertex colors */
-      const skyGeo = new THREE.SphereGeometry(480, 32, 24)
-      const skyColors = new Float32Array(skyGeo.attributes.position.count * 3)
-      const zenith = new THREE.Color(0x3a7bbf)
-      const horizon = new THREE.Color(0xc4ddef)
-      const groundCol = new THREE.Color(0x9a8a6a)
+      /* WebGPU-native procedural sky */
+      sunDirection = new THREE.Vector3(80, 100, -180).normalize()
 
-      for (let i = 0; i < skyGeo.attributes.position.count; i++) {
-        const y = skyGeo.attributes.position.getY(i)
-        const norm = (y / 480 + 1) * 0.5 /* 0 bottom, 1 top */
-        const c = new THREE.Color()
-        if (norm > 0.5) {
-          c.lerpColors(horizon, zenith, (norm - 0.5) * 2)
-        } else {
-          c.lerpColors(groundCol, horizon, norm * 2)
-        }
-        skyColors[i * 3] = c.r
-        skyColors[i * 3 + 1] = c.g
-        skyColors[i * 3 + 2] = c.b
-      }
-      skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(skyColors, 3))
+      skyMesh = new SkyMesh()
+      /* keep the dome within typical camera far planes */
+      skyMesh.scale.setScalar(480)
+      skyMesh.frustumCulled = false
+      group.add(skyMesh)
 
-      const skyMat = new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        side: THREE.BackSide,
-      })
-      const sky = new THREE.Mesh(skyGeo, skyMat)
-      group.add(sky)
+      /* parameters (matching the WebGPU demo defaults) */
+      skyMesh.turbidity.value = 10
+      skyMesh.rayleigh.value = 2
+      skyMesh.mieCoefficient.value = 0.005
+      skyMesh.mieDirectionalG.value = 0.8
+      skyMesh.sunPosition.value.copy(sunDirection)
 
-      /* sun disc with glow layers */
-      const sunPos = new THREE.Vector3(80, 100, -180)
-      for (let layer = 0; layer < 3; layer++) {
-        const radius = [12, 28, 55][layer]
-        const opacity = [0.95, 0.25, 0.08][layer]
-        const col = [0xfff4d6, 0xffe8aa, 0xffeebb][layer]
-        const geo = new THREE.CircleGeometry(radius, 32)
-        const mat = new THREE.MeshBasicMaterial({
-          color: col,
-          transparent: true,
-          opacity,
-          depthWrite: false,
-        })
-        const disc = new THREE.Mesh(geo, mat)
-        disc.position.copy(sunPos)
-        disc.lookAt(0, 0, 0)
-        group.add(disc)
-      }
-
-      /* haze band near horizon */
-      const hazeGeo = new THREE.PlaneGeometry(1200, 60)
-      const hazeMat = new THREE.MeshBasicMaterial({
-        color: 0xd4c8a8,
-        transparent: true,
-        opacity: 0.18,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-      const haze = new THREE.Mesh(hazeGeo, hazeMat)
-      haze.position.set(0, 8, -300)
-      group.add(haze)
+      /* visible sun disk (scaled to match the dome size) */
+      const sunRadius = (120 / 50000) * 480
+      sunDisk = new THREE.Mesh(
+        new THREE.SphereGeometry(sunRadius, 32, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      )
+      sunDisk.position.copy(sunDirection).multiplyScalar(480 * 0.95)
+      group.add(sunDisk)
     }
 
     function buildGround() {
@@ -456,61 +432,57 @@ export default {
     }
 
     function buildCornfield() {
-      /* stalk – reduced poly for large instance count */
-      const stalkGeo = new THREE.CylinderGeometry(0.03, 0.065, 3.0, 4, 3)
-      stalkGeo.translate(0, 1.5, 0) /* pivot at base */
+      const stalkGeo = new THREE.CylinderGeometry(0.03, 0.06, 2.2, 7)
+      stalkGeo.translate(0, 1.1, 0)
+      const leafUpperGeo = new THREE.BoxGeometry(1.05, 0.05, 0.14)
+      leafUpperGeo.translate(0.33, 1.02, 0)
+      leafUpperGeo.rotateZ(0.58)
+      const leafLowerGeo = new THREE.BoxGeometry(0.92, 0.045, 0.12)
+      leafLowerGeo.translate(-0.3, 1.34, 0)
+      leafLowerGeo.rotateZ(-0.52)
+      const tasselGeo = new THREE.ConeGeometry(0.08, 0.34, 6)
+      tasselGeo.translate(0, 2.22, 0)
 
-      const cornMat = new THREE.MeshStandardMaterial({
-        color: 0x4a7832,
-        roughness: 0.75,
-        metalness: 0.02,
-        side: THREE.DoubleSide,
+      const stalkMat = new THREE.MeshStandardMaterial({
+        color: 0x8a9840,
+        metalness: 0.01,
+        roughness: 0.92,
+        vertexColors: true,
       })
-
-      cornInstances = new THREE.InstancedMesh(stalkGeo, cornMat, CORN_COUNT)
-      cornInstances.name = 'corn-stalks'
-
-      /* tassels */
-      const tasselGeo = new THREE.ConeGeometry(0.1, 0.4, 5)
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: 0x9cab4b,
+        metalness: 0.01,
+        roughness: 0.9,
+        vertexColors: true,
+      })
       const tasselMat = new THREE.MeshStandardMaterial({
-        color: 0xc4a043,
-        roughness: 0.65,
-        metalness: 0.05,
+        color: 0xaf9a57,
+        metalness: 0.01,
+        roughness: 0.88,
+        vertexColors: true,
       })
+
+      cornInstances = new THREE.InstancedMesh(stalkGeo, stalkMat, CORN_COUNT)
+      cornInstances.name = 'corn-stalks'
       cornTasselInstances = new THREE.InstancedMesh(tasselGeo, tasselMat, CORN_COUNT)
       cornTasselInstances.name = 'corn-tassels'
-
-      const LEAVES_PER_PLANT = 3
-      const LEAF_COUNT = CORN_COUNT * LEAVES_PER_PLANT
-      const bladeGeo = new THREE.PlaneGeometry(0.8, 0.12, 3, 1)
-      /* droop the blade geometry */
-      const bladePos = bladeGeo.attributes.position.array
-      for (let i = 0; i < bladePos.length; i += 3) {
-        const xNorm = (bladePos[i] + 0.4) / 0.8
-        bladePos[i + 1] -= xNorm * xNorm * 0.08 /* slight droop curve */
-      }
-      bladeGeo.translate(0.4, 0, 0) /* pivot at stalk */
-      bladeGeo.computeVertexNormals()
-
-      const bladeMat = new THREE.MeshStandardMaterial({
-        color: 0x5a8e38,
-        roughness: 0.7,
-        metalness: 0.02,
-        side: THREE.DoubleSide,
-      })
-      leafInstances = new THREE.InstancedMesh(bladeGeo, bladeMat, LEAF_COUNT)
-      leafInstances.name = 'corn-leaves'
+      leafUpperInstances = new THREE.InstancedMesh(leafUpperGeo, leafMat, CORN_COUNT)
+      leafUpperInstances.name = 'corn-leaf-upper'
+      leafLowerInstances = new THREE.InstancedMesh(leafLowerGeo, leafMat, CORN_COUNT)
+      leafLowerInstances.name = 'corn-leaf-lower'
 
       const dummy = new THREE.Object3D()
-      const color = new THREE.Color()
+      const stalkColor = new THREE.Color()
+      const leafColor = new THREE.Color()
+      const tasselColor = new THREE.Color()
 
       for (let i = 0; i < CORN_COUNT; i++) {
         /* no path clearance — field is solid, truck plows its own trail */
         const cx = (Math.random() - 0.5) * FIELD_HALF_X * 2
         const cz = FIELD_CENTER_Z + (Math.random() - 0.5) * FIELD_HALF_Z * 2
 
-        const sy = 0.85 + Math.random() * 0.4
-        const sx = 0.8 + Math.random() * 0.35
+        const sy = 0.9 + Math.random() * 0.75
+        const sx = 1
         const ry = Math.random() * Math.PI * 2
 
         dummy.position.set(cx, 0, cz)
@@ -518,59 +490,59 @@ export default {
         dummy.scale.set(sx, sy, sx)
         dummy.updateMatrix()
         cornInstances.setMatrixAt(i, dummy.matrix)
-
-        /* color: mix of vibrant green and late-summer golden */
-        const greenish = Math.random()
-        if (greenish < 0.65) {
-          const h = 0.24 + Math.random() * 0.08
-          const s = 0.5 + Math.random() * 0.25
-          const l = 0.28 + Math.random() * 0.12
-          color.setHSL(h, s, l)
-        } else {
-          const h = 0.13 + Math.random() * 0.06
-          const s = 0.45 + Math.random() * 0.2
-          const l = 0.35 + Math.random() * 0.1
-          color.setHSL(h, s, l)
+        if (cornTasselInstances) {
+          cornTasselInstances.setMatrixAt(i, dummy.matrix)
         }
-        cornInstances.setColorAt(i, color)
+        if (leafUpperInstances) {
+          leafUpperInstances.setMatrixAt(i, dummy.matrix)
+        }
+        if (leafLowerInstances) {
+          leafLowerInstances.setMatrixAt(i, dummy.matrix)
+        }
+
+        stalkColor.setHSL(0.17 + Math.random() * 0.05, 0.44, 0.34 + Math.random() * 0.11)
+        leafColor.copy(stalkColor).offsetHSL(-0.01, 0.06, 0.04)
+        tasselColor.copy(stalkColor).offsetHSL(-0.03, -0.1, 0.2)
+        cornInstances.setColorAt(i, stalkColor)
+        if (leafUpperInstances) {
+          leafUpperInstances.setColorAt(i, leafColor)
+        }
+        if (leafLowerInstances) {
+          leafLowerInstances.setColorAt(i, leafColor)
+        }
+        if (cornTasselInstances) {
+          cornTasselInstances.setColorAt(i, tasselColor)
+        }
 
         cornBasePositions.push({ x: cx, y: 0, z: cz, ry, sx, sy })
         cornBendFactors.push(0)
-
-        /* tassel */
-        const topY = sy * 2.8
-        dummy.position.set(cx, topY, cz)
-        dummy.scale.set(0.2, 0.35, 0.2)
-        dummy.updateMatrix()
-        cornTasselInstances.setMatrixAt(i, dummy.matrix)
-        const tc = new THREE.Color().setHSL(0.11 + Math.random() * 0.05, 0.55, 0.42 + Math.random() * 0.1)
-        cornTasselInstances.setColorAt(i, tc)
-
-        /* leaves per plant at different heights & angles */
-        for (let li = 0; li < LEAVES_PER_PLANT; li++) {
-          const idx = i * LEAVES_PER_PLANT + li
-          const lh = (li + 1) * 0.48
-          dummy.position.set(cx, lh, cz)
-          dummy.rotation.set(
-            0.25 + li * 0.1,
-            ry + li * (Math.PI * 2 / LEAVES_PER_PLANT) + (Math.random() - 0.5) * 0.3,
-            0,
-          )
-          dummy.scale.set(sx * (0.9 + Math.random() * 0.3), 1, 1)
-          dummy.updateMatrix()
-          leafInstances.setMatrixAt(idx, dummy.matrix)
-        }
       }
 
       cornInstances.instanceMatrix.needsUpdate = true
       cornInstances.instanceColor.needsUpdate = true
       cornTasselInstances.instanceMatrix.needsUpdate = true
       cornTasselInstances.instanceColor.needsUpdate = true
-      leafInstances.instanceMatrix.needsUpdate = true
+      if (leafUpperInstances) {
+        leafUpperInstances.instanceMatrix.needsUpdate = true
+        if (leafUpperInstances.instanceColor) {
+          leafUpperInstances.instanceColor.needsUpdate = true
+        }
+      }
+      if (leafLowerInstances) {
+        leafLowerInstances.instanceMatrix.needsUpdate = true
+        if (leafLowerInstances.instanceColor) {
+          leafLowerInstances.instanceColor.needsUpdate = true
+        }
+      }
 
       group.add(cornInstances)
       group.add(cornTasselInstances)
-      group.add(leafInstances)
+      if (leafUpperInstances) {
+        group.add(leafUpperInstances)
+      }
+      if (leafLowerInstances) {
+        group.add(leafLowerInstances)
+      }
     }
 
     function buildTruck() {
@@ -653,10 +625,7 @@ export default {
       }
 
       /* truck bed */
-      const bedFloor = new THREE.Mesh(
-        new THREE.BoxGeometry(2.0, 0.1, 2.3),
-        darkMetal,
-      )
+      const bedFloor = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 2.3), darkMetal)
       bedFloor.position.set(0, 1.4, 1.55)
       truck.add(bedFloor)
 
@@ -667,10 +636,7 @@ export default {
         wall.position.set(side * 1.0, 1.75, 1.55)
         truck.add(wall)
       }
-      const tailgate = new THREE.Mesh(
-        new THREE.BoxGeometry(2.0, 0.65, 0.08),
-        rustyPaint,
-      )
+      const tailgate = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.65, 0.08), rustyPaint)
       tailgate.position.set(0, 1.75, 2.7)
       truck.add(tailgate)
 
@@ -725,16 +691,10 @@ export default {
 
       /* side mirrors */
       for (const side of [-1, 1]) {
-        const mArm = new THREE.Mesh(
-          new THREE.BoxGeometry(0.4, 0.04, 0.04),
-          darkMetal,
-        )
+        const mArm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), darkMetal)
         mArm.position.set(side * 1.25, 1.9, 0.1)
         truck.add(mArm)
-        const mirror = new THREE.Mesh(
-          new THREE.BoxGeometry(0.18, 0.14, 0.04),
-          chrome,
-        )
+        const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.04), chrome)
         mirror.position.set(side * 1.45, 1.9, 0.1)
         truck.add(mirror)
       }
@@ -850,10 +810,7 @@ export default {
       /* solar grid lines */
       const gridMat = new THREE.MeshBasicMaterial({ color: 0x222244 })
       for (let gi = -6; gi <= 6; gi++) {
-        const g = new THREE.Mesh(
-          new THREE.BoxGeometry(0.015, 0.025, 1.7),
-          gridMat,
-        )
+        const g = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 1.7), gridMat)
         g.position.set(gi * 1.0, 0.14, -0.3)
         drone.add(g)
       }
@@ -946,28 +903,14 @@ export default {
     }
 
     function buildLighting() {
-      /* strong warm key from sun direction */
-      const sun = new THREE.DirectionalLight(0xffe4b5, 2.5)
-      sun.position.set(80, 100, -180)
-      group.add(sun)
+      /* realistic sun + minimal ambient (aligned with SkyMesh sunPosition) */
+      sunLight = new THREE.DirectionalLight(0xffffff, 6.0)
+      const dir = (sunDirection || new THREE.Vector3(80, 100, -180).normalize()).clone()
+      sunLight.position.copy(dir).multiplyScalar(200)
+      group.add(sunLight)
 
-      /* warm secondary fill from opposite side */
-      const fill = new THREE.DirectionalLight(0xffd89e, 0.6)
-      fill.position.set(-40, 30, 60)
-      group.add(fill)
-
-      /* hemisphere: blue sky above, warm earth below */
-      const hemi = new THREE.HemisphereLight(0x7db8d8, 0x8b7040, 0.7)
-      group.add(hemi)
-
-      /* warm ambient for shadow lift */
-      const amb = new THREE.AmbientLight(0xfbe8c8, 0.25)
-      group.add(amb)
-
-      /* rim/back light for drone silhouette pop */
-      const rim = new THREE.DirectionalLight(0xddeeff, 0.4)
-      rim.position.set(-30, 60, 120)
-      group.add(rim)
+      const ambient = new THREE.AmbientLight(0xffffff, 0.03)
+      group.add(ambient)
     }
 
     /* ---- helpers ---- */
