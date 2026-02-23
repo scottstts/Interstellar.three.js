@@ -41,6 +41,8 @@ const OCEAN_WAVES = [
 ]
 const CAMERA_WATER_CLEARANCE = 0.38
 
+let cachedOceanShaderSet = null
+
 function createOceanShaderSet() {
   const timeU = uniform(0.0)
   const sunDir = uniform(new THREE.Vector3(-0.28, 0.62, -0.73).normalize())
@@ -832,10 +834,12 @@ export default {
         fillLight.position.set(10, 7, -8)
         group.add(fillLight)
 
-        const oceanShaderSet = createOceanShaderSet()
-        skyDome = oceanShaderSet.skyMesh
-        water = oceanShaderSet.oceanMesh
-        oceanTimeUniform = oceanShaderSet.timeU
+        if (!cachedOceanShaderSet) {
+          cachedOceanShaderSet = createOceanShaderSet()
+        }
+        skyDome = cachedOceanShaderSet.skyMesh
+        water = cachedOceanShaderSet.oceanMesh
+        oceanTimeUniform = cachedOceanShaderSet.timeU
 
         group.add(skyDome)
         group.add(water)
@@ -922,6 +926,9 @@ export default {
         }
 
         if (group) {
+          if (skyDome) group.remove(skyDome)
+          if (water) group.remove(water)
+
           if (rootRef && group.parent !== rootRef) {
             rootRef.add(group)
           }
