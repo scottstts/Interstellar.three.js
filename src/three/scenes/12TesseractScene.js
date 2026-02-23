@@ -241,6 +241,9 @@ export default {
     let previousBackground = null
     let previousFog = null
     let previousToneMappingExposure = null
+    let previousCameraFov = null
+    let previousCameraNear = null
+    let previousCameraFar = null
     let movementKeyBlockHandler = null
     let mouseOrbitHandler = null
     const orbitState = {
@@ -259,6 +262,9 @@ export default {
         scene.fog = new THREE.FogExp2(0x000000, 0.018)
         renderer.toneMappingExposure = 0.55
 
+        previousCameraFov = camera.fov
+        previousCameraNear = camera.near
+        previousCameraFar = camera.far
         camera.fov = 58
         camera.near = 0.05
         camera.far = 300
@@ -405,15 +411,15 @@ export default {
           const frameThickness = isLowDetail ? 0.045 : 0.055
           const frameBoxes = isLowDetail
             ? [
-                [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
-                [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
-              ]
+              [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
+              [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 1.6, frameThickness, depth + 0.02],
+            ]
             : [
-                [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
-                [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
-                [-width / 2 - frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
-                [width / 2 + frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
-              ]
+              [0, height / 2 + frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
+              [0, -height / 2 - frameThickness / 2, 0, width + frameThickness * 2, frameThickness, depth + 0.04],
+              [-width / 2 - frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
+              [width / 2 + frameThickness / 2, 0, 0, frameThickness, height, depth + 0.04],
+            ]
 
           for (const [x, y, z, boxWidth, boxHeight, boxDepth] of frameBoxes) {
             const frame = new THREE.Mesh(
@@ -940,9 +946,9 @@ export default {
         camera.lookAt(TMP_COOPER_FOCUS)
       },
 
-      resize() {},
+      resize() { },
 
-      dispose({ scene, renderer }) {
+      dispose({ scene, camera, renderer }) {
         if (movementKeyBlockHandler) {
           window.removeEventListener('keydown', movementKeyBlockHandler, true)
           movementKeyBlockHandler = null
@@ -966,6 +972,13 @@ export default {
         orbitState.yaw = 0
         orbitState.pitch = 0
 
+        if (camera) {
+          camera.fov = previousCameraFov ?? camera.fov
+          camera.near = previousCameraNear ?? camera.near
+          camera.far = previousCameraFar ?? camera.far
+          camera.updateProjectionMatrix()
+        }
+
         if (scene) {
           scene.background = previousBackground
           scene.fog = previousFog
@@ -978,6 +991,9 @@ export default {
         previousBackground = null
         previousFog = null
         previousToneMappingExposure = null
+        previousCameraFov = null
+        previousCameraNear = null
+        previousCameraFar = null
       },
     }
   },
