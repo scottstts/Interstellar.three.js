@@ -233,7 +233,10 @@ function App() {
                 <h1>Interstellar</h1>
                 <div className="entrance-meta">
                   <span>13 Scenes</span>
+                  <span>Cinematic</span>
+                  <span>WebGPU</span>
                 </div>
+                <p className="entrance-tip">Some scenes require good GPU to run smoothly</p>
                 <button className="primary-action" type="button" onClick={handleStart}>
                   Enter
                 </button>

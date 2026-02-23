@@ -183,6 +183,7 @@
 .primary-action {
   margin-top: 2rem;
   border: 1px solid rgba(186, 211, 241, 0.9);
+  border-radius: 0.7rem;
   color: #f5f9ff;
   background: linear-gradient(120deg, rgba(115, 160, 212, 0.42), rgba(79, 122, 175, 0.24));
   padding: 0.78rem 1.5rem;
@@ -191,6 +192,13 @@
   text-transform: uppercase;
   cursor: pointer;
   transition: transform 130ms ease, box-shadow 130ms ease, background-color 130ms ease;
+}
+
+.entrance-tip {
+  margin: 0.85rem 0 0;
+  color: rgba(227, 238, 252, 0.78);
+  font: 500 0.88rem/1.4 'Rajdhani', 'Avenir Next', 'Trebuchet MS', sans-serif;
+  letter-spacing: 0.02em;
 }
 
 .primary-action:hover {

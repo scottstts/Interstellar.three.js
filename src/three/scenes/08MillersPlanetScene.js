@@ -609,10 +609,10 @@ function createRangerShip() {
 
     const nx2 = Math.min((Math.abs(x) + 0.1) / halfWidth, 1.0)
     const finalY2 = THREE.MathUtils.lerp(centerY, edgeHeight, Math.pow(nx2, 1.5))
-    const rotationZ = Math.atan2(finalY2 - finalY, 0.1) * Math.sign(-x)
+    const rotationZ = Math.atan2(finalY2 - finalY, 0.1) * Math.sign(x)
 
     const pane = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), windowMaterial)
-    pane.position.set(x, finalY - height / 2 + 0.02, z)
+    pane.position.set(x, finalY - height / 2 + 0.03, z)
     pane.rotation.set(mainSlopeAngle, rotationY, rotationZ)
     ship.add(pane)
   }
