@@ -240,13 +240,17 @@ function createAstronaut() {
   chestUnit.position.set(0, 2.23, 0.37)
   astronaut.add(chestUnit)
 
+  const head = new THREE.Group()
+  head.position.set(0, 3.52, 0)
+  head.rotation.y = Math.PI
+  astronaut.add(head)
+
   const helmetBase = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.86, 0.8), suitMaterial)
-  helmetBase.position.set(0, 3.52, 0)
-  astronaut.add(helmetBase)
+  head.add(helmetBase)
 
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.44, 0.1), visorMaterial)
-  visor.position.set(0, 3.55, 0.45)
-  astronaut.add(visor)
+  visor.position.set(0, 0.03, 0.45)
+  head.add(visor)
 
   const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.82, 0.24), trimMaterial)
   backpack.position.set(0, 2.41, -0.42)
@@ -274,7 +278,7 @@ function createAstronaut() {
   leftCalf.position.y = -0.9
   leftLeg.add(leftCalf)
   const leftBoot = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.65), trimMaterial)
-  leftBoot.position.set(0, -1.34, 0.12)
+  leftBoot.position.set(0, -1.34, -0.12)
   leftLeg.add(leftBoot)
   leftLeg.position.set(-0.24, 1.74, 0)
   astronaut.add(leftLeg)
