@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu'
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
 import { disposeObject3D } from '../utils/dispose'
 
 const SCENE_ID = 'cooper-farmhouse-intro'
@@ -153,70 +154,47 @@ function createRoadTexture(rng) {
   return texture
 }
 
-function createSkyTexture(rng) {
-  const texture = createCanvasTexture(1024, (context, size) => {
-    const gradient = context.createLinearGradient(0, 0, 0, size)
-    gradient.addColorStop(0, '#e4d7c2')
-    gradient.addColorStop(0.52, '#dacbb3')
-    gradient.addColorStop(1, '#b1946f')
-    context.fillStyle = gradient
-    context.fillRect(0, 0, size, size)
+const FARMHOUSE_SKY_PARAMS = Object.freeze({
+  timeOfDay: 15.0,
+  turbidity: 10.0,
+  rayleigh: 2.0,
+  mieCoefficient: 0.005,
+  mieDirectionalG: 0.8,
+})
 
-    for (let i = 0; i < 46000; i += 1) {
-      const x = Math.floor(rng() * size)
-      const y = Math.floor(rng() * size)
-      const alpha = 0.008 + rng() * 0.024
-      const tone = 220 + Math.floor(rng() * 20)
-      context.fillStyle = `rgba(${tone}, ${tone - 6}, ${tone - 18}, ${alpha})`
-      context.fillRect(x, y, 2, 2)
-    }
-
-    context.globalAlpha = 0.11
-    context.fillStyle = '#e8ddcb'
-    for (let i = 0; i < 18; i += 1) {
-      const centerX = rng() * size
-      const centerY = size * (0.24 + rng() * 0.34)
-      const radius = size * (0.08 + rng() * 0.2)
-      context.beginPath()
-      context.ellipse(centerX, centerY, radius, radius * 0.3, rng() * TAU, 0, TAU)
-      context.fill()
-    }
-    context.globalAlpha = 1
-  })
-
-  texture.repeat.set(1, 1)
-  return texture
+function getFarmhouseSunState() {
+  const t = (FARMHOUSE_SKY_PARAMS.timeOfDay / 24) * Math.PI * 2
+  const elevation = Math.max(-0.05, Math.sin(t - Math.PI / 2))
+  const mix = THREE.MathUtils.clamp((elevation + 0.05) / 1.05, 0, 1)
+  const phi = THREE.MathUtils.lerp(Math.PI * 0.51, Math.PI * 0.02, mix)
+  const theta = t + Math.PI * 0.35
+  const sunDirection = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).normalize()
+  return { mix, sunDirection }
 }
 
-function createSkyBackdrop(rng) {
+function createSkyBackdrop() {
   const group = new THREE.Group()
 
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(520, 48, 28),
-    new THREE.MeshBasicMaterial({
-      side: THREE.BackSide,
-      map: createSkyTexture(rng),
-      depthWrite: false,
-      fog: false,
-    }),
-  )
-  sky.position.y = -76
+  const sky = new SkyMesh()
+  sky.scale.setScalar(100000)
   group.add(sky)
 
-  const hazeMaterial = new THREE.MeshBasicMaterial({
-    color: 0xe8d6bd,
-    depthWrite: false,
-    fog: false,
-    transparent: true,
-    opacity: 0.16,
-  })
+  const { mix, sunDirection } = getFarmhouseSunState()
 
-  for (let i = 0; i < 6; i += 1) {
-    const hazeBand = new THREE.Mesh(new THREE.PlaneGeometry(300, 24), hazeMaterial)
-    hazeBand.position.set(0, 12 + i * 4.6, -196 + i * 8.5)
-    hazeBand.rotation.x = -0.05 + i * 0.004
-    group.add(hazeBand)
-  }
+  sky.turbidity.value = FARMHOUSE_SKY_PARAMS.turbidity
+  sky.rayleigh.value = FARMHOUSE_SKY_PARAMS.rayleigh
+  sky.mieCoefficient.value = FARMHOUSE_SKY_PARAMS.mieCoefficient
+  sky.mieDirectionalG.value = FARMHOUSE_SKY_PARAMS.mieDirectionalG
+  sky.sunPosition.value.copy(sunDirection)
+
+  const sunDisk = new THREE.Mesh(
+    new THREE.SphereGeometry(120, 32, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  )
+  sunDisk.position.copy(sunDirection).multiplyScalar(50000)
+  const diskBrightness = THREE.MathUtils.lerp(0.0, 1.0, mix)
+  sunDisk.visible = diskBrightness > 0.02
+  group.add(sunDisk)
 
   return group
 }
@@ -224,27 +202,21 @@ function createSkyBackdrop(rng) {
 function createLightingSet() {
   const group = new THREE.Group()
 
-  const hemi = new THREE.HemisphereLight(0xf5e4c8, 0x665543, 0.74)
-  const key = new THREE.DirectionalLight(0xffe9c3, 1.7)
-  const fill = new THREE.DirectionalLight(0xb69f84, 0.52)
-  const ambient = new THREE.AmbientLight(0x90745e, 0.23)
+  const { mix, sunDirection } = getFarmhouseSunState()
 
-  key.position.set(112, 68, 24)
-  fill.position.set(-58, 24, -74)
+  const sunLight = new THREE.DirectionalLight(0xffffff, 6.0)
+  sunLight.position.copy(sunDirection).multiplyScalar(200)
+  sunLight.target.position.set(0, 0, 0)
+  sunLight.target.updateMatrixWorld()
 
-  const sun = new THREE.Mesh(
-    new THREE.CircleGeometry(10, 48),
-    new THREE.MeshBasicMaterial({
-      color: 0xf7dfa6,
-      depthWrite: false,
-      opacity: 0.52,
-      transparent: true,
-    }),
-  )
-  sun.position.set(128, 58, -212)
-  sun.lookAt(0, 0, 0)
+  const warm = new THREE.Color(0xffd1a3)
+  const white = new THREE.Color(0xffffff)
+  sunLight.color.copy(warm).lerp(white, mix)
+  sunLight.intensity = THREE.MathUtils.lerp(0.5, 7.0, Math.pow(mix, 0.7))
 
-  group.add(hemi, key, fill, ambient, sun)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.03)
+
+  group.add(sunLight, sunLight.target, ambient)
   return group
 }
 
@@ -687,7 +659,7 @@ function createCornfieldSystem(rng, initialCamera = null) {
   const group = new THREE.Group()
 
   const plants = []
-  const cornDensityMultiplier = 2
+  const cornDensityMultiplier = 4
   const spacingScale = 1 / Math.sqrt(cornDensityMultiplier)
   const fieldExtent = 520
   const maxCornRadius = 560
@@ -769,11 +741,11 @@ function createCornfieldSystem(rng, initialCamera = null) {
   const stalkGeometry = new THREE.CylinderGeometry(0.03, 0.06, 2.2, 7)
   stalkGeometry.translate(0, 1.1, 0)
   const leafUpperGeometry = new THREE.BoxGeometry(1.05, 0.05, 0.14)
-  leafUpperGeometry.translate(0.33, 1.02, 0)
   leafUpperGeometry.rotateZ(0.58)
+  leafUpperGeometry.translate(0.33, 1.02, 0)
   const leafLowerGeometry = new THREE.BoxGeometry(0.92, 0.045, 0.12)
-  leafLowerGeometry.translate(-0.3, 1.34, 0)
   leafLowerGeometry.rotateZ(-0.52)
+  leafLowerGeometry.translate(-0.3, 1.34, 0)
   const tasselGeometry = new THREE.ConeGeometry(0.08, 0.34, 6)
   tasselGeometry.translate(0, 2.22, 0)
 

@@ -435,11 +435,11 @@ export default {
       const stalkGeo = new THREE.CylinderGeometry(0.03, 0.06, 2.2, 7)
       stalkGeo.translate(0, 1.1, 0)
       const leafUpperGeo = new THREE.BoxGeometry(1.05, 0.05, 0.14)
-      leafUpperGeo.translate(0.33, 1.02, 0)
       leafUpperGeo.rotateZ(0.58)
+      leafUpperGeo.translate(0.33, 1.02, 0)
       const leafLowerGeo = new THREE.BoxGeometry(0.92, 0.045, 0.12)
-      leafLowerGeo.translate(-0.3, 1.34, 0)
       leafLowerGeo.rotateZ(-0.52)
+      leafLowerGeo.translate(-0.3, 1.34, 0)
       const tasselGeo = new THREE.ConeGeometry(0.08, 0.34, 6)
       tasselGeo.translate(0, 2.22, 0)
 
