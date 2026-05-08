@@ -4,7 +4,20 @@ import { SceneManager } from './SceneManager'
 import { sceneManifest } from './scenes/sceneManifest'
 import { disposeObject3D } from './utils/dispose'
 
-const MAX_PIXEL_RATIO = 2
+const MIN_PIXEL_RATIO = 1
+const MAX_PIXEL_RATIO = 1.5
+const MAX_RENDER_PIXELS = 1_650_000
+
+function getBudgetedPixelRatio(width, height) {
+  const viewportPixels = Math.max(width * height, 1)
+  const pixelBudgetRatio = Math.sqrt(MAX_RENDER_PIXELS / viewportPixels)
+  const devicePixelRatio = window.devicePixelRatio || MIN_PIXEL_RATIO
+
+  return Math.max(
+    MIN_PIXEL_RATIO,
+    Math.min(devicePixelRatio, MAX_PIXEL_RATIO, pixelBudgetRatio),
+  )
+}
 
 export class ThreeApp {
   constructor(container) {
@@ -43,7 +56,6 @@ export class ThreeApp {
       throw new Error('WebGPU initialization failed. This browser or device does not support WebGPU.')
     }
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 0.95
 
@@ -52,6 +64,7 @@ export class ThreeApp {
 
     const width = Math.max(this.container.clientWidth, 1)
     const height = Math.max(this.container.clientHeight, 1)
+    this.renderer.setPixelRatio(getBudgetedPixelRatio(width, height))
 
     this.camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 5000)
     this.camera.position.set(0, 2.2, 15)
@@ -132,6 +145,7 @@ export class ThreeApp {
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
 
+    this.renderer.setPixelRatio(getBudgetedPixelRatio(width, height))
     this.renderer.setSize(width, height, false)
 
     if (this.sceneManager) {
